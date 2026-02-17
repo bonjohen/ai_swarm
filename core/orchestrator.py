@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import time
 import uuid
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
 from agents.base_agent import BaseAgent
@@ -13,14 +15,18 @@ from agents.registry import get_agent
 from core.budgets import BudgetLedger
 from core.errors import (
     AgentValidationError,
+    BudgetExceededError,
     GraphError,
     MissingStateError,
+    ModelAPIError,
     NodeError,
 )
 from core.state import merge_delta, validate_state
 from graphs.graph_types import Graph, GraphNode
 
 logger = logging.getLogger(__name__)
+
+CHECKPOINT_DIR = Path(".checkpoints")
 
 
 def _utcnow() -> str:
@@ -45,6 +51,30 @@ class RunResult:
         self.budget = budget
 
 
+def _save_checkpoint(run_id: str, node_name: str, state: dict[str, Any]) -> Path:
+    """Save a state checkpoint after successful node execution."""
+    cp_dir = CHECKPOINT_DIR / run_id
+    cp_dir.mkdir(parents=True, exist_ok=True)
+    cp_path = cp_dir / f"{node_name}.json"
+    cp_path.write_bytes(json.dumps(state, indent=2, default=str).encode("utf-8"))
+    return cp_path
+
+
+def load_checkpoint(run_id: str) -> tuple[str, dict[str, Any]] | None:
+    """Load the latest checkpoint for a run, returns (last_completed_node, state) or None."""
+    cp_dir = CHECKPOINT_DIR / run_id
+    if not cp_dir.exists():
+        return None
+    # Find the most recent checkpoint by file modification time
+    checkpoints = sorted(cp_dir.glob("*.json"), key=lambda p: p.stat().st_mtime)
+    if not checkpoints:
+        return None
+    latest = checkpoints[-1]
+    node_name = latest.stem
+    state = json.loads(latest.read_bytes())
+    return node_name, state
+
+
 def execute_graph(
     graph: Graph,
     state: dict[str, Any],
@@ -52,6 +82,8 @@ def execute_graph(
     model_call: Any = None,
     budget: BudgetLedger | None = None,
     on_event: Any = None,
+    checkpoint: bool = False,
+    resume_from: str | None = None,
 ) -> RunResult:
     """Run a full graph to completion.
 
@@ -61,6 +93,8 @@ def execute_graph(
         model_call: callable(system_prompt, user_message) -> str
         budget: Optional BudgetLedger for cost tracking/enforcement.
         on_event: Optional callable(event_dict) for observability.
+        checkpoint: If True, save state after each successful node.
+        resume_from: Node name to resume from (skip nodes before this one).
 
     Returns:
         RunResult with final state, events, and status.
@@ -76,8 +110,36 @@ def execute_graph(
     events: list[dict[str, Any]] = []
     current_node_name = graph.entry
 
+    # If resuming, skip to the node after resume_from
+    if resume_from:
+        found = False
+        skip_node = graph.entry
+        while skip_node is not None:
+            node = graph.get_node(skip_node)
+            if skip_node == resume_from:
+                current_node_name = node.next
+                found = True
+                break
+            if node.end:
+                break
+            skip_node = node.next
+        if not found:
+            raise GraphError(f"Cannot resume: node '{resume_from}' not found in graph")
+
     while current_node_name is not None:
         node = graph.get_node(current_node_name)
+
+        # Inject degradation hints into state if budget is under pressure
+        hint = budget.get_degradation_hint()
+        if hint:
+            state["_degradation"] = {
+                "active": True,
+                "max_sources": hint.max_sources,
+                "max_questions": hint.max_questions,
+                "skip_deep_synthesis": hint.skip_deep_synthesis,
+                "reason": hint.reason,
+            }
+
         event = _execute_node(
             node=node,
             graph=graph,
@@ -91,10 +153,25 @@ def execute_graph(
             on_event(event)
 
         if event["status"] == "success":
+            # Save checkpoint after successful node execution
+            if checkpoint:
+                _save_checkpoint(run_id, node.name, state)
+
             if node.end:
                 current_node_name = None
             else:
                 current_node_name = node.next
+
+        elif event["status"] == "budget_degraded":
+            # Budget exceeded but degradation was applied — continue with degraded state
+            budget.flag_human_review(f"Budget degraded at node '{node.name}': {event.get('error', '')}")
+            if checkpoint:
+                _save_checkpoint(run_id, node.name, state)
+            if node.end:
+                current_node_name = None
+            else:
+                current_node_name = node.next
+
         elif event["status"] == "failed":
             if node.on_fail:
                 logger.warning("Node '%s' failed, routing to on_fail '%s'", node.name, node.on_fail)
@@ -144,8 +221,8 @@ def _execute_node(
             if missing:
                 raise MissingStateError(node.name, missing)
 
-            # 2. Check budget
-            budget.check()
+            # 2. Check budget (with per-node caps if defined)
+            budget.check(node.budget)
 
             # 3. Execute agent
             delta_state = agent.run(state, model_call=model_call)
@@ -164,6 +241,47 @@ def _execute_node(
                 "agent_id": agent.AGENT_ID,
                 "status": "success",
                 "attempt": attempt,
+                "cost": budget.to_dict(),
+            }
+
+        except BudgetExceededError as exc:
+            logger.warning("Node '%s' budget exceeded: %s", node.name, exc)
+            # Try degradation instead of hard failure
+            if not budget.degradation_active:
+                budget.degradation_active = True
+                budget.flag_human_review(
+                    f"Budget exceeded at node '{node.name}': {exc}"
+                )
+            return {
+                "event_id": event_id,
+                "run_id": run_id,
+                "t": started,
+                "node_id": node.name,
+                "agent_id": agent.AGENT_ID,
+                "status": "budget_degraded",
+                "attempt": attempt,
+                "error": str(exc),
+                "cost": budget.to_dict(),
+            }
+
+        except ModelAPIError as exc:
+            # Model API failures (timeouts, rate limits) get retried
+            logger.warning(
+                "Node '%s' model API error attempt %d/%d: %s",
+                node.name, attempt, attempts, exc,
+            )
+            if attempt < attempts:
+                time.sleep(node.retry.backoff_seconds)
+                continue
+            return {
+                "event_id": event_id,
+                "run_id": run_id,
+                "t": started,
+                "node_id": node.name,
+                "agent_id": agent.AGENT_ID,
+                "status": "failed",
+                "attempt": attempt,
+                "error": f"model_api_error: {exc}",
                 "cost": budget.to_dict(),
             }
 

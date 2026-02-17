@@ -1,8 +1,12 @@
-"""QA validator agent — enforces structural integrity and grounding constraints."""
+"""QA validator agent — enforces structural integrity and grounding constraints.
+
+Supports global rules plus domain-specific gates for cert, dossier, and lab.
+"""
 
 from __future__ import annotations
 
 import json
+import math
 from typing import Any
 
 from pydantic import BaseModel
@@ -27,7 +31,7 @@ class QAValidatorOutput(BaseModel):
 
 class QAValidatorAgent(BaseAgent):
     AGENT_ID = "qa_validator"
-    VERSION = "0.1.0"
+    VERSION = "0.2.0"
     SYSTEM_PROMPT = "You are a quality assurance validator."
     USER_TEMPLATE = "{_qa_bypass}"
     INPUT_SCHEMA = QAValidatorInput
@@ -52,6 +56,24 @@ class QAValidatorAgent(BaseAgent):
             raise ValueError("violations must be a list")
 
     def _check_all(self, state: dict[str, Any]) -> list[dict[str, Any]]:
+        violations: list[dict[str, Any]] = []
+
+        # Global rules
+        violations.extend(self._check_global_rules(state))
+
+        # Domain-specific rules
+        scope_type = state.get("scope_type", "")
+        if scope_type == "cert":
+            violations.extend(self._check_cert_rules(state))
+        elif scope_type == "topic":
+            violations.extend(self._check_dossier_rules(state))
+        elif scope_type == "lab":
+            violations.extend(self._check_lab_rules(state))
+
+        return violations
+
+    def _check_global_rules(self, state: dict[str, Any]) -> list[dict[str, Any]]:
+        """Global rules that apply to all scope types."""
         violations: list[dict[str, Any]] = []
         known_doc_ids = set(state.get("doc_ids", []))
         known_segment_ids = set(state.get("segment_ids", []))
@@ -111,5 +133,154 @@ class QAValidatorAgent(BaseAgent):
                     "rule": "publish_requires_delta",
                     "message": "Cannot publish without a delta",
                 })
+
+        return violations
+
+    # ------------------------------------------------------------------
+    # Certification-specific rules
+    # ------------------------------------------------------------------
+
+    def _check_cert_rules(self, state: dict[str, Any]) -> list[dict[str, Any]]:
+        """Every objective must have at least one module and min questions proportional to weight."""
+        violations: list[dict[str, Any]] = []
+        objectives = state.get("objectives", [])
+        modules = state.get("modules", [])
+        questions = state.get("questions", [])
+
+        if not objectives:
+            return violations
+
+        # Build lookups
+        modules_by_obj = {}
+        for m in modules:
+            obj_id = m.get("objective_id", "")
+            modules_by_obj.setdefault(obj_id, []).append(m)
+
+        questions_by_obj = {}
+        for q in questions:
+            obj_id = q.get("objective_id", "")
+            questions_by_obj.setdefault(obj_id, []).append(q)
+
+        for obj in objectives:
+            obj_id = obj.get("objective_id", "")
+            weight = obj.get("weight", 1.0)
+
+            # Must have at least one module
+            obj_modules = modules_by_obj.get(obj_id, [])
+            if not obj_modules:
+                violations.append({
+                    "rule": "cert_objective_has_module",
+                    "objective_id": obj_id,
+                    "message": f"Objective '{obj_id}' has no lesson modules",
+                })
+
+            # Minimum question count proportional to weight
+            min_questions = max(1, math.ceil(weight * 2))
+            obj_questions = questions_by_obj.get(obj_id, [])
+            if len(obj_questions) < min_questions:
+                violations.append({
+                    "rule": "cert_objective_min_questions",
+                    "objective_id": obj_id,
+                    "expected": min_questions,
+                    "actual": len(obj_questions),
+                    "message": (
+                        f"Objective '{obj_id}' has {len(obj_questions)} questions, "
+                        f"needs at least {min_questions} (weight={weight})"
+                    ),
+                })
+
+        return violations
+
+    # ------------------------------------------------------------------
+    # Dossier-specific rules
+    # ------------------------------------------------------------------
+
+    def _check_dossier_rules(self, state: dict[str, Any]) -> list[dict[str, Any]]:
+        """Contradictions must be surfaced; disputed claims must have status='disputed'."""
+        violations: list[dict[str, Any]] = []
+        contradictions = state.get("contradictions", [])
+        claims = state.get("claims", [])
+
+        if not contradictions:
+            return violations
+
+        # Build claim lookup
+        claim_lookup = {c.get("claim_id"): c for c in claims}
+
+        # Collect all claim IDs referenced in contradictions
+        disputed_ids: set[str] = set()
+        for ctr in contradictions:
+            for key in ("claim_a_id", "claim_b_id"):
+                cid = ctr.get(key, "")
+                if cid:
+                    disputed_ids.add(cid)
+
+            # Each contradiction must have a reason (structural field, not freeform)
+            if not ctr.get("reason"):
+                violations.append({
+                    "rule": "dossier_contradiction_has_reason",
+                    "claim_a_id": ctr.get("claim_a_id"),
+                    "claim_b_id": ctr.get("claim_b_id"),
+                    "message": "Contradiction missing structured reason field",
+                })
+
+        # Disputed claims must have status='disputed'
+        for cid in disputed_ids:
+            claim = claim_lookup.get(cid)
+            if claim and claim.get("status") != "disputed":
+                violations.append({
+                    "rule": "dossier_disputed_claim_status",
+                    "claim_id": cid,
+                    "current_status": claim.get("status"),
+                    "message": f"Claim '{cid}' is in a contradiction but status is '{claim.get('status')}', expected 'disputed'",
+                })
+
+        return violations
+
+    # ------------------------------------------------------------------
+    # Lab-specific rules
+    # ------------------------------------------------------------------
+
+    def _check_lab_rules(self, state: dict[str, Any]) -> list[dict[str, Any]]:
+        """Results must tie to model+hw spec; scoring produces required components."""
+        violations: list[dict[str, Any]] = []
+
+        synthesis = state.get("synthesis", {})
+        models = state.get("models", [])
+        hw_spec = state.get("hw_spec", {})
+
+        # Must have hardware spec
+        if not hw_spec:
+            violations.append({
+                "rule": "lab_has_hw_spec",
+                "message": "Lab run missing hardware specification",
+            })
+
+        # Must have at least one model
+        if not models:
+            violations.append({
+                "rule": "lab_has_models",
+                "message": "Lab run has no models to test",
+            })
+
+        # If scores exist, every tested model should have a score
+        scores = synthesis.get("scores", {})
+        if scores:
+            model_ids = {m.get("model_id") for m in models}
+            for mid in model_ids:
+                if mid and mid not in scores:
+                    violations.append({
+                        "rule": "lab_model_has_score",
+                        "model_id": mid,
+                        "message": f"Model '{mid}' was tested but has no score",
+                    })
+
+        # Metrics must be present if synthesis mentions them
+        metrics = state.get("metrics", [])
+        if synthesis.get("metrics_summary") and not metrics:
+            violations.append({
+                "rule": "lab_metrics_present",
+                "message": "Synthesis references metrics but none are present",
+            })
 
         return violations

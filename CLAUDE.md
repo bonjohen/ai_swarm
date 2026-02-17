@@ -30,10 +30,10 @@ pytest tests/<file>::<test_name>   # single test
 
 ### Six Core Components
 
-1. **Graph Runner (Orchestrator)** (`core/orchestrator.py`): executes YAML graph definitions, manages run state as a dict persisted between nodes, enforces budgets.
+1. **Graph Runner (Orchestrator)** (`core/orchestrator.py`): executes YAML graph definitions, manages run state as a dict persisted between nodes, enforces budgets. Supports state checkpointing and resume from last successful node.
 2. **Agent Runtime** (`agents/`): loads agent files, builds prompts, routes to local or frontier model, parses/validates JSON outputs. Each agent produces a `delta_state: dict` merged into the run state.
 3. **Data Layer** (`data/`): SQLite for structured objects (sources, entities, claims, metrics, snapshots, deltas, runs) + filesystem for raw docs/chunks/artifacts. DAOs per domain object.
-4. **QA Gate** (`agents/qa_validator_agent.py`): validates structural integrity — no claim without citations, citations resolve to doc+segment, metrics have unit+dimensions, no publish without snapshot+delta.
+4. **QA Gate** (`agents/qa_validator_agent.py`): validates structural integrity — global rules (claim citations, doc/segment resolution, metric units, publish prerequisites) plus domain-specific rules: cert (objective has module + min questions proportional to weight), dossier (disputed claims have correct status, contradictions have structured reason), lab (hw spec present, models have scores, metrics present if referenced).
 5. **Snapshot + Delta Engine** (`agents/delta_agent.py`): versions outputs per scope and computes semantic diffs (structured diff on claim IDs + statement similarity).
 6. **Publisher** (`agents/publisher_agent.py` + `publish/renderer.py`): renders and packages artifacts to `publish/out/<scope>/<version>/`. Produces `manifest.json`, `artifacts.json`, domain JSON artifacts, Markdown reports, and CSV exports (cert only). Versioning: cert=semver, dossier=date-based, lab=suite-based. Publisher cannot synthesize — render only. All file writes use binary mode for cross-platform hash consistency.
 
@@ -55,7 +55,11 @@ Default: local model. Escalate to frontier when: extraction confidence below thr
 
 ### Budget System
 
-Tracked per token in/out, wall time, and dollar cost. Enforced at per-node, per-run, and per-scope levels. On budget exceeded: degrade (fewer sources/questions/skip deep synthesis) or flag for human review.
+Tracked per token in/out, wall time, and dollar cost. Enforced at per-node, per-run, and per-scope levels. Degradation activates at 80% of budget (configurable): reduces max_sources, max_questions, skips deep synthesis. On hard exceed: `budget_degraded` event emitted and human review flagged. Per-node cost breakdown tracked.
+
+### Observability (`core/logging.py`)
+
+Structured JSON logging with redaction of API keys/tokens. `MetricsCollector` tracks run duration, token usage, frontier usage rate, QA fail rate per agent, delta magnitude. `log_node_event()` emits structured records for each node execution.
 
 ### Run Execution Flow
 

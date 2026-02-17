@@ -77,6 +77,10 @@ _MOCK_RESPONSES = {
              "content_json": {"question": "What does cloud provide?", "options": ["Scale", "Nothing"],
                               "correct_answer": "Scale", "explanation": "Cloud = scale"},
              "grounding_claim_ids": ["c1"]},
+            {"question_id": "q1b", "objective_id": "obj-1", "qtype": "true_false",
+             "content_json": {"question": "Cloud offers scalability?", "options": ["True", "False"],
+                              "correct_answer": "True", "explanation": "Yes, cloud scales."},
+             "grounding_claim_ids": ["c1"]},
             {"question_id": "q2", "objective_id": "obj-2", "qtype": "true_false",
              "content_json": {"question": "IAM is a security best practice?", "options": ["True", "False"],
                               "correct_answer": "True", "explanation": "Yes."},
@@ -140,7 +144,7 @@ def test_certification_graph_end_to_end():
     assert len(result.state["doc_ids"]) == 1
     assert len(result.state["claims"]) == 2
     assert len(result.state["modules"]) == 2
-    assert len(result.state["questions"]) == 2
+    assert len(result.state["questions"]) == 3
     assert result.state["gate_status"] == "PASS"
     assert result.state["snapshot_id"]
     assert result.state["delta_json"]["added_claims"] == ["c1", "c2"]

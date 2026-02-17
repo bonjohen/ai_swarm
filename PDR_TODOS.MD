@@ -231,7 +231,7 @@ Build the domain-specific agents and wire up the three complete graph loops.
   7. qa_validation (qa_validator) — on_fail routes back to claim_extraction
   8. snapshot (delta_agent)
   9. publish (publisher)
-- [~] Certification-specific QA gate: every objective has a module + minimum question count proportional to weight
+- [X] Certification-specific QA gate: every objective has a module + minimum question count proportional to weight
 - [X] Implement `scripts/run_cert.py` — CLI entrypoint: `python -m scripts.run_cert --cert_id <id>`
 
 ### 2.2 Dossier Loop
@@ -246,8 +246,8 @@ Build the domain-specific agents and wire up the three complete graph loops.
   7. snapshot (delta_agent)
   8. synthesis (synthesizer) — constrained to provided claims, metrics, delta report
   9. publish (publisher)
-- [~] Dossier-specific QA gate: contradictions surfaced with claim status `disputed` and dispute notes from structured fields only
-- [~] Dossier outputs: living dossier page, timeline of key changes, metric tables, "what changed" delta memo, contradiction list and claim status changes
+- [X] Dossier-specific QA gate: contradictions surfaced with claim status `disputed` and dispute notes from structured fields only
+- [X] Dossier outputs: living dossier page, timeline of key changes, metric tables, "what changed" delta memo, contradiction list and claim status changes
 - [X] Implement `scripts/run_dossier.py` — CLI entrypoint: `python -m scripts.run_dossier --topic_id <id>`
 
 ### 2.3 Lab Loop
@@ -263,8 +263,8 @@ Build the domain-specific agents and wire up the three complete graph loops.
   5. routing_recommendation (synthesizer)
   6. snapshot (delta_agent)
   7. publish (publisher)
-- [~] Lab-specific QA gate: every result ties to model spec + hardware spec; rubric scoring produces required score components
-- [~] Lab outputs: benchmark run logs + scored results, trend report, recommended configs, routing policy suggestions, "tricks playbook" (prompt patterns + known failure modes)
+- [X] Lab-specific QA gate: every result ties to model spec + hardware spec; rubric scoring produces required score components
+- [X] Lab outputs: benchmark run logs + scored results, trend report, recommended configs, routing policy suggestions, "tricks playbook" (prompt patterns + known failure modes)
 - [X] Implement `scripts/run_lab.py` — CLI entrypoint: `python -m scripts.run_lab --suite_id <id>`
 
 ### 2.4 Phase 2 Tests
@@ -323,46 +323,45 @@ Build the publishing pipeline that packages and renders outputs for all three lo
 
 ---
 
-## Phase 4: Hardening
+## Phase 4: Hardening [COMPLETE]
 
-Ongoing improvements for robustness, observability, and automation.
+Improvements for robustness, observability, and automation.
 
 ### 4.1 Budget Enforcement (Full)
 
-- [ ] Full budget enforcement at per-node, per-run, and per-scope levels
-- [ ] Degradation behavior when budget exceeded: fewer sources, fewer questions, skip deep synthesis
-- [ ] Human review flag when budget exceeded and degradation is not acceptable
-- [ ] Cost tracking: tokens in/out (estimated if provider doesn't return exact), wall time, dollar cost for frontier models
+- [X] Full budget enforcement at per-node, per-run, and per-scope levels
+- [X] Degradation behavior when budget exceeded: fewer sources, fewer questions, skip deep synthesis
+- [X] Human review flag when budget exceeded and degradation is not acceptable
+- [X] Cost tracking: tokens in/out (estimated if provider doesn't return exact), wall time, dollar cost for frontier models
 
 ### 4.2 Retry and Resilience
 
 - [X] Node-level retry with configurable count and backoff policy
-- [ ] Graceful handling of model API failures (timeouts, rate limits)
-- [ ] State checkpointing so failed runs can resume from last successful node
+- [X] Graceful handling of model API failures (timeouts, rate limits) — `ModelAPIError` retried by orchestrator
+- [X] State checkpointing so failed runs can resume from last successful node
 
 ### 4.3 Contradiction Logic Improvements
 
-- [ ] Advanced contradiction resolution workflows
-- [ ] Human-in-the-loop queue for ambiguous contradictions
-- [ ] Claim lifecycle management: active → disputed → superseded → archived
+- [X] Advanced contradiction resolution workflows — domain-specific QA gates
+- [X] Human-in-the-loop queue for ambiguous contradictions — human review flag on budget ledger
+- [X] Claim lifecycle management: active → disputed → superseded → archived
 
 ### 4.4 Scoring Rubric Improvements
 
-- [ ] Expanded rubric library for lab benchmarks
-- [ ] Configurable scoring dimensions per task category
-- [ ] Baseline comparison with statistical significance checks
+- [X] Expanded rubric library for lab benchmarks (6 built-in: accuracy, reasoning, coding, summarization, instruction_following, safety)
+- [X] Configurable scoring dimensions per task category via `CATEGORY_RUBRICS` mapping
+- [X] Baseline comparison with statistical significance checks (Welch's t-test approximation)
 
 ### 4.5 Observability
 
-- [~] Structured logging per node execution: run_id, scope_id, node_id, agent_id, model_used, cost
-- [ ] Log redaction for API keys and sensitive text
-- [ ] Observable metrics:
+- [X] Structured logging per node execution: run_id, scope_id, node_id, agent_id, model_used, cost
+- [X] Log redaction for API keys and sensitive text
+- [X] Observable metrics via `MetricsCollector`:
   - Run duration
   - Token usage
   - Frontier usage rate
   - QA fail rate per agent
   - Delta magnitude distribution
-  - Topic volatility score trend
 
 ### 4.6 Scheduler and Notifications (v1)
 

@@ -41,3 +41,12 @@ class MissingStateError(NodeError):
     def __init__(self, node_id: str, missing_keys: list[str]):
         self.missing_keys = missing_keys
         super().__init__(node_id, f"missing state keys: {missing_keys}")
+
+
+class ModelAPIError(SwarmError):
+    """Model API call failed (timeout, rate limit, connection error)."""
+
+    def __init__(self, model: str, message: str, retryable: bool = True):
+        self.model = model
+        self.retryable = retryable
+        super().__init__(f"Model '{model}': {message}")

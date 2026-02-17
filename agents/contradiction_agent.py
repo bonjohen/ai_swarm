@@ -63,7 +63,44 @@ class ContradictionAgent(BaseAgent):
                 raise ValueError("Each contradiction must reference claim_a_id and claim_b_id")
             if not c.get("reason"):
                 raise ValueError("Each contradiction must have a reason")
+            if c.get("severity") and c["severity"] not in ("low", "medium", "high"):
+                raise ValueError(f"Invalid severity: {c['severity']}")
 
         updated = output.get("updated_claim_ids")
         if not isinstance(updated, list):
             raise ValueError("updated_claim_ids must be a list")
+
+
+# --- Claim lifecycle utilities ---
+
+CLAIM_STATUSES = ("active", "disputed", "superseded", "archived")
+
+
+def transition_claim_status(
+    claim: dict[str, Any], new_status: str, reason: str = ""
+) -> dict[str, Any]:
+    """Transition a claim to a new lifecycle status. Returns updated claim dict."""
+    if new_status not in CLAIM_STATUSES:
+        raise ValueError(f"Invalid claim status: {new_status}. Must be one of {CLAIM_STATUSES}")
+
+    current = claim.get("status", "active")
+    # Validate allowed transitions
+    allowed_transitions = {
+        "active": {"disputed", "superseded", "archived"},
+        "disputed": {"active", "superseded", "archived"},
+        "superseded": {"archived"},
+        "archived": set(),  # archived is terminal
+    }
+    if new_status not in allowed_transitions.get(current, set()):
+        raise ValueError(
+            f"Cannot transition claim '{claim.get('claim_id')}' from '{current}' to '{new_status}'"
+        )
+
+    updated = dict(claim)
+    updated["status"] = new_status
+    if reason:
+        updated.setdefault("status_history", [])
+        updated["status_history"].append({
+            "from": current, "to": new_status, "reason": reason,
+        })
+    return updated
