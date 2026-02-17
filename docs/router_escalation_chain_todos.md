@@ -23,35 +23,35 @@ Extend the data layer and adapter infrastructure to support multiple named model
 
 ### R0.1 Adapter Registry
 
-- [ ] Extend `OllamaAdapter` with configurable `max_tokens` and `context_length` fields
-- [ ] Add tier-specific factory functions to `core/adapters.py`:
+- [X] Extend `OllamaAdapter` with configurable `max_tokens` and `context_length` fields
+- [X] Add tier-specific factory functions to `core/adapters.py`:
   - `make_micro_adapter()` → `deepseek-r1:1.5b`, context 2k, max_tokens 128, temperature 0
   - `make_light_adapter()` → `deepseek-r1:1.5b`, context 4k, max_tokens 1024, temperature 0.2
-- [ ] Update `ModelRouter.register_local()` / `register_frontier()` to accept tier labels (e.g., `"micro"`, `"light"`, `"frontier"`)
-- [ ] Add `ModelRouter.get_adapter(tier: str) -> ModelAdapter` method for tier-based lookup
-- [ ] Add a `RouterConfig` dataclass to hold tier-to-model mappings, loadable from YAML
+- [X] Update `ModelRouter.register_local()` / `register_frontier()` to accept tier labels (e.g., `"micro"`, `"light"`, `"frontier"`) — adapters keyed by `adapter.name` (e.g. `"micro"`, `"light"`)
+- [X] Add `ModelRouter.get_adapter(tier: str) -> ModelAdapter` method for tier-based lookup — implemented as `get_model_callable(decision)` which looks up by adapter name
+- [X] Add a `RouterConfig` dataclass to hold tier-to-model mappings, loadable from YAML
 
 ### R0.2 Multi-Provider Adapter Framework
 
-- [ ] Define `ProviderAdapter` protocol in `core/adapters.py`:
+- [X] Define `ProviderAdapter` protocol in `core/adapters.py` — implemented as `ModelAdapter` protocol with `name`, `call(system_prompt, user_message) -> str`
   - `name: str`, `provider: str`, `call(system_prompt, user_message) -> str`
   - `cost_per_input_token: float`, `cost_per_output_token: float`
   - `quality_tier: str` (e.g., `"standard"`, `"high"`, `"frontier"`)
   - `max_context: int`, `supports_json_mode: bool`
-- [ ] Implement `AnthropicAdapter` — Claude API via `anthropic` SDK:
+- [X] Implement `AnthropicAdapter` — Claude API via `anthropic` SDK:
   - Config: model name, API key (env var `ANTHROPIC_API_KEY`), max_tokens, temperature
   - Maps to `messages.create()` with system prompt and user message
-- [ ] Implement `OpenAIAdapter` — OpenAI/compatible API via `openai` SDK:
+- [X] Implement `OpenAIAdapter` — OpenAI/compatible API via `openai` SDK:
   - Config: model name, API key (env var `OPENAI_API_KEY`), base_url (for compatible providers), max_tokens, temperature
   - Maps to `chat.completions.create()` with system + user messages
-- [ ] Implement `DGXSparkAdapter` — Ollama or vLLM running on DGX Spark:
+- [X] Implement `DGXSparkAdapter` — Ollama or vLLM running on DGX Spark:
   - Config: host (e.g., `http://dgx-spark:11434`), model name (e.g., `llama3:70b`), max_tokens, temperature
   - Same HTTP interface as `OllamaAdapter` but targeting remote DGX Spark hardware
   - Tracks cost as amortized local hardware cost (configurable $/token)
 
 ### R0.3 Provider Cost and Quality Registry
 
-- [ ] Implement `core/provider_registry.py`:
+- [X] Implement `core/provider_registry.py`:
   - `ProviderEntry` dataclass: `name: str`, `adapter: ProviderAdapter`, `cost_per_1k_input: float`, `cost_per_1k_output: float`, `quality_score: float` (0–1 benchmark rating), `max_context: int`, `available: bool`, `tags: list[str]` (e.g., `["cloud", "local", "dgx"]`)
   - `ProviderRegistry` class: register providers, query by capability, sort by cost or quality
   - `select_provider(requirements) -> ProviderEntry`: pick best provider given task requirements
@@ -59,7 +59,7 @@ Extend the data layer and adapter infrastructure to support multiple named model
 
 ### R0.4 Router Configuration File
 
-- [ ] Create `config/router_config.yaml`:
+- [X] Create `config/router_config.yaml`:
   - Tier 0: regex patterns and their target actions
   - Tier 1: model (`deepseek-r1:1.5b`), context 2k, max_tokens 128, temperature 0, concurrency 8+
   - Tier 2: model (`deepseek-r1:1.5b`), context 4k, max_tokens 1024, temperature 0.2, concurrency 2–4
@@ -71,26 +71,26 @@ Extend the data layer and adapter infrastructure to support multiple named model
   - Escalation thresholds: confidence, complexity, reasoning_depth
   - Cost weights for composite routing score
   - Provider selection strategy: `"cheapest_qualified"` | `"highest_quality"` | `"prefer_local"`
-- [ ] Add `load_router_config(path) -> RouterConfig` to `core/routing.py`
-- [ ] Wire `RouterConfig` into `ModelRouter.__init__()` as optional config source
+- [X] Add `load_router_config(path) -> RouterConfig` to `core/routing.py`
+- [X] Wire `RouterConfig` into `ModelRouter.__init__()` as optional config source
 
 ### R0.5 Routing Telemetry Schema
 
-- [ ] Add `routing_decisions` table to `data/schema.sql`:
+- [X] Add `routing_decisions` table to `data/schema.sql`:
   - `decision_id TEXT PK, run_id TEXT, node_id TEXT, agent_id TEXT, request_tier INTEGER, chosen_tier INTEGER, provider TEXT, escalation_reason TEXT, confidence REAL, complexity_score REAL, quality_score REAL, latency_ms REAL, tokens_in INTEGER, tokens_out INTEGER, cost_usd REAL, created_at TEXT`
-- [ ] Implement `data/dao_routing.py` — CRUD for routing_decisions:
+- [X] Implement `data/dao_routing.py` — CRUD for routing_decisions:
   - `insert_routing_decision()`, `get_decisions_for_run()`, `get_tier_distribution()`, `get_cost_by_provider()`
 
 ### R0.6 Phase R0 Tests
 
-- [ ] Test adapter factory functions create correct configs for Tier 1 and Tier 2 (same model, different settings)
-- [ ] Test `ModelRouter` registration with tier labels and lookup
-- [ ] Test `ProviderRegistry` registration and `select_provider()` with quality/cost filters
-- [ ] Test provider selection strategies: cheapest_qualified, highest_quality, prefer_local
-- [ ] Test `load_router_config()` parses YAML correctly including provider list
-- [ ] Test routing_decisions DAO round-trip
-- [ ] Test adapter connectivity (Ollama health check for `deepseek-r1:1.5b`)
-- [ ] Test `DGXSparkAdapter` falls back gracefully when DGX Spark is unreachable
+- [X] Test adapter factory functions create correct configs for Tier 1 and Tier 2 (same model, different settings)
+- [X] Test `ModelRouter` registration with tier labels and lookup
+- [X] Test `ProviderRegistry` registration and `select_provider()` with quality/cost filters
+- [X] Test provider selection strategies: cheapest_qualified, highest_quality, prefer_local
+- [X] Test `load_router_config()` parses YAML correctly including provider list
+- [X] Test routing_decisions DAO round-trip
+- [X] Test adapter connectivity (Ollama health check for `deepseek-r1:1.5b`)
+- [X] Test `DGXSparkAdapter` falls back gracefully when DGX Spark is unreachable
 
 ---
 
@@ -244,25 +244,25 @@ Wire the frontier pool with quality/cost-based provider selection. Tier 3 select
 
 ### R4.1 Provider Adapters
 
-- [ ] Implement and register all Tier 3 provider adapters:
+- [X] Implement and register all Tier 3 provider adapters — done in R0.2:
   - `DGXSparkAdapter` — local DGX Spark (Grace Blackwell, 128GB unified memory) running large models via Ollama/vLLM
   - `AnthropicAdapter` — Claude API (Sonnet, Opus)
   - `OpenAIAdapter` — GPT-4o, GPT-4-turbo (also supports compatible endpoints)
   - `OllamaAdapter` (existing) — any additional local Ollama models on workstation GPU
-- [ ] Register all providers in `ProviderRegistry` with cost/quality metadata from `router_config.yaml`
+- [ ] Register all providers in `ProviderRegistry` with cost/quality metadata from `router_config.yaml` — registry class exists but no startup wiring to load providers from config
 - [ ] Add `--router-config` flag to all CLI scripts (run_cert, run_dossier, run_lab, run_story)
 - [ ] Update `make_model_call()` to support `"router"` mode that initializes all tiers from config
 
 ### R4.2 Quality/Cost-Based Provider Selection
 
-- [ ] Implement provider selection logic in `ProviderRegistry.select_provider()`:
+- [X] Implement provider selection logic in `ProviderRegistry.select_provider()` — done in R0.3:
   - Input: `TaskRequirements` dataclass — `min_quality: float`, `max_cost_per_1k: float`, `min_context: int`, `preferred_tags: list[str]`, `required_capabilities: list[str]`
   - Selection strategies (configurable in `RouterConfig`):
     - `cheapest_qualified` — filter by min_quality, sort by cost ascending
     - `highest_quality` — filter by max_cost, sort by quality descending
     - `prefer_local` — prioritize `local`/`dgx` tagged providers, then sort by quality
   - Availability check: ping provider before selection, skip unavailable
-- [ ] Wire provider selection into `ModelRouter`: when Tier 3 is selected, call `ProviderRegistry.select_provider()` to pick the specific model
+- [ ] Wire provider selection into `ModelRouter`: when Tier 3 is selected, call `ProviderRegistry.select_provider()` to pick the specific model — ModelRouter and ProviderRegistry exist independently, not yet integrated
 - [ ] Log selected provider name and cost to routing decision
 
 ### R4.3 Frontier Escalation Rules
@@ -273,8 +273,8 @@ Wire the frontier pool with quality/cost-based provider selection. Tier 3 select
   - Long context (> 4k tokens)
   - Multi-document synthesis
   - User-requested high precision (flag in state)
-- [ ] Add daily frontier usage cap: `max_frontier_calls_per_day` in RouterConfig (per-provider and aggregate)
-- [ ] Implement cap enforcement in `ModelRouter`: track daily frontier calls, refuse if exceeded, fall back to next cheapest provider
+- [X] Add daily frontier usage cap: `max_frontier_calls_per_day` in RouterConfig (per-provider and aggregate) — `daily_frontier_cap` field exists in `RouterConfig`
+- [ ] Implement cap enforcement in `ModelRouter`: track daily frontier calls, refuse if exceeded, fall back to next cheapest provider — config field exists but enforcement logic not implemented
 
 ### R4.4 Failure Handling Chain
 
@@ -288,12 +288,12 @@ Wire the frontier pool with quality/cost-based provider selection. Tier 3 select
 
 ### R4.5 Phase R4 Tests
 
-- [ ] Test `AnthropicAdapter` call structure (mock HTTP)
-- [ ] Test `OpenAIAdapter` call structure (mock HTTP)
-- [ ] Test `DGXSparkAdapter` with remote Ollama host
-- [ ] Test provider selection: cheapest_qualified strategy
-- [ ] Test provider selection: highest_quality strategy
-- [ ] Test provider selection: prefer_local prioritizes DGX Spark and local Ollama
+- [X] Test `AnthropicAdapter` call structure (mock HTTP) — in `test_adapters_extended.py`
+- [X] Test `OpenAIAdapter` call structure (mock HTTP) — in `test_adapters_extended.py`
+- [X] Test `DGXSparkAdapter` with remote Ollama host — in `test_adapters_extended.py`
+- [X] Test provider selection: cheapest_qualified strategy — in `test_provider_registry.py`
+- [X] Test provider selection: highest_quality strategy — in `test_provider_registry.py`
+- [X] Test provider selection: prefer_local prioritizes DGX Spark and local Ollama — in `test_provider_registry.py`
 - [ ] Test provider fallback when first choice is unavailable
 - [ ] Test daily frontier cap enforcement (allow, then deny, then fallback)
 - [ ] Test full escalation chain: Tier 1 → Tier 2 → Tier 3 (provider pool)
@@ -309,7 +309,7 @@ Logging, metrics, and threshold tuning for the tiered router.
 
 ### R5.1 Routing Telemetry
 
-- [ ] Log every routing decision to `routing_decisions` table:
+- [ ] Log every routing decision to `routing_decisions` table — table and DAO exist (R0.5) but orchestrator/router don't call them yet:
   - Request tier, chosen tier, provider name, escalation reason, confidence, complexity, latency, tokens, cost
 - [ ] Add `_log_routing_decision()` helper to `TieredDispatcher`
 - [ ] Extend `MetricsCollector` in `core/logging.py` with router metrics:
@@ -361,11 +361,11 @@ Reliability, safety rails, and production hardening.
 
 ### R6.2 Timeout Enforcement
 
-- [ ] Per-tier timeout caps in RouterConfig:
+- [ ] Per-tier timeout caps in RouterConfig — adapters have timeout fields but no per-tier enforcement in a dispatcher:
   - Tier 1: 5s
   - Tier 2: 30s
   - Tier 3: 120s (may vary by provider)
-- [ ] Per-provider timeout overrides in provider config
+- [ ] Per-provider timeout overrides in provider config — timeout fields exist on adapter dataclasses but not enforced at dispatch level
 - [ ] Enforce in `TieredDispatcher` with `asyncio.wait_for()` or thread-level timeout
 - [ ] On timeout: escalate to next tier or next provider (treat as failure)
 
