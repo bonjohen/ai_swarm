@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import logging
+from collections import defaultdict
 from dataclasses import dataclass, field
+from datetime import date
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -37,8 +39,11 @@ class TaskRequirements:
 class ProviderRegistry:
     """Registry of model providers with strategy-based selection."""
 
-    def __init__(self) -> None:
+    def __init__(self, *, daily_cap: int = 100) -> None:
         self._providers: dict[str, ProviderEntry] = {}
+        self.daily_cap = daily_cap
+        self._daily_calls: dict[str, int] = defaultdict(int)  # date_str -> count
+        self._provider_calls: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
 
     def register(self, entry: ProviderEntry) -> None:
         """Register a provider entry."""
@@ -109,3 +114,111 @@ class ProviderRegistry:
         if local:
             return max(local, key=lambda p: p.quality_score)
         return max(cloud, key=lambda p: p.quality_score)
+
+    # --- Frontier cap enforcement ---
+
+    def _today(self) -> str:
+        return date.today().isoformat()
+
+    def record_call(self, provider_name: str) -> None:
+        """Record a frontier call for cap tracking."""
+        today = self._today()
+        self._daily_calls[today] += 1
+        self._provider_calls[today][provider_name] += 1
+
+    def daily_calls_today(self) -> int:
+        """Total frontier calls today."""
+        return self._daily_calls.get(self._today(), 0)
+
+    def is_cap_exceeded(self) -> bool:
+        """Check if daily aggregate frontier cap is exceeded."""
+        return self.daily_calls_today() >= self.daily_cap
+
+    def select_provider_with_fallback(
+        self,
+        requirements: TaskRequirements,
+        strategy: str = "cheapest_qualified",
+    ) -> ProviderEntry | None:
+        """Select a provider, falling back to next if first fails cap check.
+
+        Skips providers that are marked unavailable.
+        Returns None if no providers available or cap exceeded.
+        """
+        if self.is_cap_exceeded():
+            logger.warning("Daily frontier cap (%d) exceeded", self.daily_cap)
+            return None
+
+        candidates = self._filter(requirements)
+        if not candidates:
+            return None
+
+        # Sort by strategy preference, then try each in order
+        if strategy == "cheapest_qualified":
+            sorted_candidates = sorted(candidates, key=lambda p: (p.cost_per_1k_input + p.cost_per_1k_output) / 2)
+        elif strategy == "highest_quality":
+            sorted_candidates = sorted(candidates, key=lambda p: p.quality_score, reverse=True)
+        elif strategy == "prefer_local":
+            local = sorted([p for p in candidates if "local" in p.tags], key=lambda p: p.quality_score, reverse=True)
+            cloud = sorted([p for p in candidates if "local" not in p.tags], key=lambda p: p.quality_score, reverse=True)
+            sorted_candidates = local + cloud
+        else:
+            sorted_candidates = candidates
+
+        for provider in sorted_candidates:
+            if provider.available:
+                return provider
+
+        return None
+
+    def mark_unavailable(self, name: str) -> None:
+        """Mark a provider as temporarily unavailable."""
+        if name in self._providers:
+            self._providers[name].available = False
+            logger.warning("Provider '%s' marked unavailable", name)
+
+    def mark_available(self, name: str) -> None:
+        """Mark a provider as available again."""
+        if name in self._providers:
+            self._providers[name].available = True
+
+
+def load_providers_from_config(
+    registry: ProviderRegistry,
+    provider_configs: list[Any],
+) -> None:
+    """Load providers from router_config.yaml tier3_providers into a registry.
+
+    Each config is a ProviderConfig (from core.routing) with fields:
+    name, provider_type, model, host, cost_per_1k_input, cost_per_1k_output,
+    quality_score, max_context, tags.
+    """
+    from core.adapters import AnthropicAdapter, DGXSparkAdapter, OllamaAdapter, OpenAIAdapter
+
+    for pc in provider_configs:
+        if pc.provider_type == "dgx":
+            adapter = DGXSparkAdapter(
+                name=pc.name,
+                model=pc.model,
+                host=pc.host or "http://localhost:11434",
+            )
+        elif pc.provider_type == "anthropic":
+            adapter = AnthropicAdapter(name=pc.name, model=pc.model)
+        elif pc.provider_type == "openai":
+            adapter = OpenAIAdapter(name=pc.name, model=pc.model)
+        elif pc.provider_type == "ollama":
+            adapter = OllamaAdapter(name=pc.name, model=pc.model)
+        else:
+            logger.warning("Unknown provider_type '%s' for '%s', skipping", pc.provider_type, pc.name)
+            continue
+
+        entry = ProviderEntry(
+            name=pc.name,
+            adapter=adapter,
+            provider_type=pc.provider_type,
+            cost_per_1k_input=pc.cost_per_1k_input,
+            cost_per_1k_output=pc.cost_per_1k_output,
+            quality_score=pc.quality_score,
+            max_context=pc.max_context,
+            tags=pc.tags,
+        )
+        registry.register(entry)

@@ -20,6 +20,7 @@ from core.errors import (
     MissingStateError,
     ModelAPIError,
     NodeError,
+    RoutingFailure,
 )
 from core.routing import ModelRouter
 from core.state import merge_delta, validate_state
@@ -324,6 +325,21 @@ def _execute_node(
                 "status": "budget_degraded",
                 "attempt": attempt,
                 "error": str(exc),
+                "cost": budget.to_dict(),
+            }
+
+        except RoutingFailure as exc:
+            logger.error("Node '%s' routing failure: %s", node.name, exc)
+            return {
+                "event_id": event_id,
+                "run_id": run_id,
+                "t": started,
+                "node_id": node.name,
+                "agent_id": agent.AGENT_ID,
+                "status": "failed",
+                "attempt": attempt,
+                "error": f"routing_failure: {exc}",
+                "tried_providers": exc.tried_providers,
                 "cost": budget.to_dict(),
             }
 

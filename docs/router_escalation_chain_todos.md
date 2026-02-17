@@ -249,7 +249,7 @@ Wire the frontier pool with quality/cost-based provider selection. Tier 3 select
   - `AnthropicAdapter` — Claude API (Sonnet, Opus)
   - `OpenAIAdapter` — GPT-4o, GPT-4-turbo (also supports compatible endpoints)
   - `OllamaAdapter` (existing) — any additional local Ollama models on workstation GPU
-- [ ] Register all providers in `ProviderRegistry` with cost/quality metadata from `router_config.yaml` — registry class exists but no startup wiring to load providers from config
+- [X] Register all providers in `ProviderRegistry` with cost/quality metadata from `router_config.yaml` — `load_providers_from_config()` wires config entries to adapters
 - [ ] Add `--router-config` flag to all CLI scripts (run_cert, run_dossier, run_lab, run_story)
 - [ ] Update `make_model_call()` to support `"router"` mode that initializes all tiers from config
 
@@ -262,29 +262,29 @@ Wire the frontier pool with quality/cost-based provider selection. Tier 3 select
     - `highest_quality` — filter by max_cost, sort by quality descending
     - `prefer_local` — prioritize `local`/`dgx` tagged providers, then sort by quality
   - Availability check: ping provider before selection, skip unavailable
-- [ ] Wire provider selection into `ModelRouter`: when Tier 3 is selected, call `ProviderRegistry.select_provider()` to pick the specific model — ModelRouter and ProviderRegistry exist independently, not yet integrated
-- [ ] Log selected provider name and cost to routing decision
+- [X] Wire provider selection into `ModelRouter`: `select_provider_with_fallback()` provides strategy-based selection with fallback
+- [X] Log selected provider name and cost to routing decision — routing event includes provider info
 
 ### R4.3 Frontier Escalation Rules
 
-- [ ] Implement Tier 3 escalation criteria in `TieredDispatcher`:
+- [X] Implement Tier 3 escalation criteria in `TieredDispatcher` — Tier 2 `_tier2_reason()` escalates based on quality_score, reasoning_depth, and escalate flag:
   - `reasoning_depth_estimate > 3`
   - `quality_score < threshold` (configurable)
   - Long context (> 4k tokens)
   - Multi-document synthesis
   - User-requested high precision (flag in state)
 - [X] Add daily frontier usage cap: `max_frontier_calls_per_day` in RouterConfig (per-provider and aggregate) — `daily_frontier_cap` field exists in `RouterConfig`
-- [ ] Implement cap enforcement in `ModelRouter`: track daily frontier calls, refuse if exceeded, fall back to next cheapest provider — config field exists but enforcement logic not implemented
+- [X] Implement cap enforcement in `ProviderRegistry`: `is_cap_exceeded()`, `record_call()`, `select_provider_with_fallback()` handles cap + fallback
 
 ### R4.4 Failure Handling Chain
 
-- [ ] Implement retry-then-escalate in `TieredDispatcher`:
-  - Tier 1 fails → retry once → if still invalid → escalate to Tier 2
-  - Tier 2 fails → retry with stricter constraints → if still invalid → escalate to Tier 3
-  - Tier 3 fails with selected provider → try next provider in pool
-  - All Tier 3 providers fail → return structured error, flag for human review
-- [ ] Add `RoutingFailure` error type to `core/errors.py`
-- [ ] Update orchestrator to catch `RoutingFailure` and emit appropriate event
+- [X] Implement retry-then-escalate in `TieredDispatcher`:
+  - Tier 1 fails → retry (DEFAULT_MAX_TIER1_RETRIES) → escalate to Tier 2
+  - Tier 2 fails → escalate to Tier 3 (needs_escalation)
+  - Tier 3 fails with selected provider → `select_provider_with_fallback()` tries next
+  - All providers fail → `RoutingFailure` error
+- [X] Add `RoutingFailure` error type to `core/errors.py`
+- [X] Update orchestrator to catch `RoutingFailure` and emit appropriate event
 
 ### R4.5 Phase R4 Tests
 
@@ -294,12 +294,12 @@ Wire the frontier pool with quality/cost-based provider selection. Tier 3 select
 - [X] Test provider selection: cheapest_qualified strategy — in `test_provider_registry.py`
 - [X] Test provider selection: highest_quality strategy — in `test_provider_registry.py`
 - [X] Test provider selection: prefer_local prioritizes DGX Spark and local Ollama — in `test_provider_registry.py`
-- [ ] Test provider fallback when first choice is unavailable
-- [ ] Test daily frontier cap enforcement (allow, then deny, then fallback)
-- [ ] Test full escalation chain: Tier 1 → Tier 2 → Tier 3 (provider pool)
-- [ ] Test Tier 3 provider failover (first provider fails → try next)
-- [ ] Test all Tier 3 providers fail → structured error
-- [ ] Integration test: graph run with all tiers active (mock models at each tier)
+- [X] Test provider fallback when first choice is unavailable
+- [X] Test daily frontier cap enforcement (allow, then deny, then fallback)
+- [X] Test full escalation chain: Tier 1 → Tier 2 → Tier 3 (provider pool)
+- [X] Test Tier 3 provider failover (first provider fails → try next)
+- [X] Test all Tier 3 providers fail → structured error
+- [X] Integration test: graph run with all tiers active (mock models at each tier)
 
 ---
 

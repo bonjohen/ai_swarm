@@ -50,3 +50,12 @@ class ModelAPIError(SwarmError):
         self.model = model
         self.retryable = retryable
         super().__init__(f"Model '{model}': {message}")
+
+
+class RoutingFailure(SwarmError):
+    """All providers/tiers failed to handle a request."""
+
+    def __init__(self, tier: int, message: str, tried_providers: list[str] | None = None):
+        self.tier = tier
+        self.tried_providers = tried_providers or []
+        super().__init__(f"Routing failure at tier {tier}: {message}")
