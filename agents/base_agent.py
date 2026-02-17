@@ -37,7 +37,10 @@ class BaseAgent(ABC):
 
     def build_prompt(self, state: dict[str, Any]) -> tuple[str, str]:
         """Return (system_prompt, user_message) from current state."""
-        return self.SYSTEM_PROMPT, self.USER_TEMPLATE.format(**state)
+        safe = {k: (str(v) if not isinstance(v, str) else v) for k, v in state.items()}
+        return self.SYSTEM_PROMPT, self.USER_TEMPLATE.format_map(
+            type("_SafeDict", (dict,), {"__missing__": lambda s, k: f"{{{k}}}"})(**safe)
+        )
 
     @abstractmethod
     def parse(self, response: str) -> dict[str, Any]:
