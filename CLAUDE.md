@@ -35,7 +35,7 @@ pytest tests/<file>::<test_name>   # single test
 3. **Data Layer** (`data/`): SQLite for structured objects (sources, entities, claims, metrics, snapshots, deltas, runs) + filesystem for raw docs/chunks/artifacts. DAOs per domain object.
 4. **QA Gate** (`agents/qa_validator_agent.py`): validates structural integrity — no claim without citations, citations resolve to doc+segment, metrics have unit+dimensions, no publish without snapshot+delta.
 5. **Snapshot + Delta Engine** (`agents/delta_agent.py`): versions outputs per scope and computes semantic diffs (structured diff on claim IDs + statement similarity).
-6. **Publisher** (`publish/`): renders and packages artifacts to `publish/out/<scope>/<version>/`. Produces `manifest.json`, `artifacts.json`, and domain artifacts. Publisher cannot synthesize — render only.
+6. **Publisher** (`agents/publisher_agent.py` + `publish/renderer.py`): renders and packages artifacts to `publish/out/<scope>/<version>/`. Produces `manifest.json`, `artifacts.json`, domain JSON artifacts, Markdown reports, and CSV exports (cert only). Versioning: cert=semver, dossier=date-based, lab=suite-based. Publisher cannot synthesize — render only. All file writes use binary mode for cross-platform hash consistency.
 
 ### Three Graph Loops (YAML in `graphs/`)
 

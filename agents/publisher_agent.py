@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -13,6 +14,46 @@ from pydantic import BaseModel
 from agents.base_agent import AgentPolicy, BaseAgent
 
 PUBLISH_ROOT = Path("publish/out")
+
+
+def _next_semver(publish_root: Path, scope_type: str, scope_id: str) -> str:
+    """Compute next semver for certification publishes (e.g. 1.0.0 → 1.1.0)."""
+    base = publish_root / scope_type / scope_id
+    if not base.exists():
+        return "1.0.0"
+    existing = []
+    for d in base.iterdir():
+        if d.is_dir() and re.match(r"^\d+\.\d+\.\d+$", d.name):
+            existing.append(tuple(int(x) for x in d.name.split(".")))
+    if not existing:
+        return "1.0.0"
+    latest = max(existing)
+    return f"{latest[0]}.{latest[1] + 1}.0"
+
+
+def _date_version() -> str:
+    """Date-based version for dossier publishes (e.g. 2026-02-16)."""
+    return datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
+
+def _suite_version(state: dict[str, Any]) -> str:
+    """Suite-based version for lab publishes: suite_id + short snapshot hash."""
+    suite_id = state.get("suite_config", {}).get("suite_id", state.get("scope_id", "suite"))
+    snap = state.get("snapshot_id", "unknown")[:8]
+    return f"{suite_id}-{snap}"
+
+
+def auto_version(scope_type: str, state: dict[str, Any], publish_root: Path = PUBLISH_ROOT) -> str:
+    """Generate a version label based on scope_type."""
+    if scope_type == "cert":
+        return _next_semver(publish_root, scope_type, state.get("scope_id", "unknown"))
+    elif scope_type == "topic":
+        return _date_version()
+    elif scope_type == "lab":
+        return _suite_version(state)
+    else:
+        # Fallback: short snapshot hash
+        return state.get("snapshot_id", "unknown")[:8]
 
 
 class PublisherInput(BaseModel):
@@ -63,7 +104,7 @@ class PublisherAgent(BaseAgent):
         now = datetime.now(timezone.utc).isoformat()
 
         # Determine version label
-        version = state.get("version", snapshot_id[:8])
+        version = state.get("version") or auto_version(scope_type, state)
         publish_dir = PUBLISH_ROOT / scope_type / scope_id / version
         publish_dir.mkdir(parents=True, exist_ok=True)
 
@@ -86,24 +127,29 @@ class PublisherAgent(BaseAgent):
             if key in state and state[key]:
                 artifact_data[key] = state[key]
 
-        # Write each artifact
+        # Write each artifact (binary mode for consistent hashing)
         for name, data in artifact_data.items():
-            content = json.dumps(data, indent=2, default=str)
+            content_bytes = json.dumps(data, indent=2, default=str).encode("utf-8")
             file_path = publish_dir / f"{name}.json"
-            file_path.write_text(content)
+            file_path.write_bytes(content_bytes)
             artifacts.append({
                 "name": name,
                 "path": str(file_path),
-                "hash": hashlib.sha256(content.encode()).hexdigest(),
+                "hash": hashlib.sha256(content_bytes).hexdigest(),
             })
+
+        # Render Markdown + CSV exports
+        from publish.renderer import render_exports
+        export_artifacts = render_exports(scope_type, {**state, "manifest": manifest}, publish_dir)
+        artifacts.extend(export_artifacts)
 
         # Write manifest
         manifest_path = publish_dir / "manifest.json"
-        manifest_path.write_text(json.dumps(manifest, indent=2))
+        manifest_path.write_bytes(json.dumps(manifest, indent=2).encode("utf-8"))
 
         # Write artifacts index
         artifacts_index_path = publish_dir / "artifacts.json"
-        artifacts_index_path.write_text(json.dumps(artifacts, indent=2))
+        artifacts_index_path.write_bytes(json.dumps(artifacts, indent=2).encode("utf-8"))
 
         return {
             "publish_dir": str(publish_dir),

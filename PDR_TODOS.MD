@@ -278,7 +278,7 @@ Build the domain-specific agents and wire up the three complete graph loops.
 
 ---
 
-## Phase 3: Publisher
+## Phase 3: Publisher [COMPLETE]
 
 Build the publishing pipeline that packages and renders outputs for all three loops.
 
@@ -295,31 +295,31 @@ Build the publishing pipeline that packages and renders outputs for all three lo
 
 ### 3.2 Versioning Scheme
 
-- [ ] Certification: semver (e.g., `1.0.0`, `1.1.0`)
-- [ ] Dossier: date-based versions (e.g., `2026-02` snapshot label)
-- [ ] Lab: suite-based (suite version + model revision)
+- [X] Certification: semver (e.g., `1.0.0`, `1.1.0`)
+- [X] Dossier: date-based versions (e.g., `2026-02-16` snapshot label)
+- [X] Lab: suite-based (suite version + model revision)
 
 ### 3.3 Renderer and Templates
 
-- [ ] Implement `publish/renderer.py` — renders JSON artifacts into output formats
-- [ ] Create templates in `publish/templates/` for:
+- [X] Implement `publish/renderer.py` — renders JSON artifacts into output formats
+- [X] Create templates in `publish/renderer.py` for:
   - Certification: objective map, lesson modules, question bank, changelog/delta memo
   - Dossier: living dossier page, timeline, metric tables, delta memo, contradiction list
   - Lab: benchmark logs, trend report, config recommendations, tricks playbook
-- [ ] JSON artifacts always produced; static markdown/HTML optional
+- [X] JSON artifacts always produced; static Markdown rendered automatically
 
 ### 3.4 Export Formats
 
-- [ ] Certification exports: JSON, CSV, and Markdown
-- [ ] Dossier exports: JSON and Markdown
-- [ ] Lab exports: JSON and Markdown
+- [X] Certification exports: JSON, CSV, and Markdown
+- [X] Dossier exports: JSON and Markdown
+- [X] Lab exports: JSON and Markdown
 
 ### 3.5 Phase 3 Tests
 
-- [ ] Golden tests: "expected artifacts" hash comparisons for publish output with known inputs
-- [ ] Manifest.json schema validation tests
-- [ ] Artifacts.json integrity tests (all listed paths exist, hashes match)
-- [ ] Test that publish is blocked when QA gate has not passed
+- [X] Golden tests: "expected artifacts" hash comparisons for publish output with known inputs
+- [X] Manifest.json schema validation tests
+- [X] Artifacts.json integrity tests (all listed paths exist, hashes match)
+- [X] Test that publish is blocked when QA gate has not passed
 
 ---
 
