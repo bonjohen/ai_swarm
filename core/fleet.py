@@ -64,8 +64,8 @@ class FleetConfig:
 class NodeResult:
     node_name: str
     reachable: bool = False
+    deleted: list[str] = field(default_factory=list)
     pulled: list[str] = field(default_factory=list)
-    skipped: list[str] = field(default_factory=list)
     created: list[str] = field(default_factory=list)
     failed: list[str] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
@@ -178,6 +178,12 @@ def list_existing_models(host: str) -> set[str]:
     return names
 
 
+def delete_model(host: str, tag: str) -> None:
+    """Delete *tag* from the Ollama instance at *host*."""
+    client = _get_client(host)
+    client.delete(model=tag)
+
+
 def pull_model(host: str, tag: str) -> None:
     """Pull *tag* on the Ollama instance at *host*."""
     client = _get_client(host)
@@ -207,19 +213,25 @@ def provision_node(node: FleetNode, config: FleetConfig) -> NodeResult:
         return result
     result.reachable = True
 
-    # 2. List existing models to skip re-pulls
+    # 2. List existing models so we can remove before re-deploying
     try:
         existing = list_existing_models(node.host)
     except Exception as exc:
         result.errors.append(f"Failed to list models: {exc}")
         return result
 
-    # 3. Pull base models
+    # 3. Pull base models (delete first if present)
     for tag in config.base_models:
         if tag in existing:
-            result.skipped.append(tag)
-            logger.info("[%s] Skipping %s (already present)", node.name, tag)
-            continue
+            try:
+                delete_model(node.host, tag)
+                result.deleted.append(tag)
+                logger.info("[%s] Deleted existing %s", node.name, tag)
+            except Exception as exc:
+                result.failed.append(tag)
+                result.errors.append(f"Delete failed for {tag}: {exc}")
+                logger.error("[%s] Delete failed for %s: %s", node.name, tag, exc)
+                continue
         try:
             pull_model(node.host, tag)
             result.pulled.append(tag)
@@ -229,12 +241,18 @@ def provision_node(node: FleetNode, config: FleetConfig) -> NodeResult:
             result.errors.append(f"Pull failed for {tag}: {exc}")
             logger.error("[%s] Pull failed for %s: %s", node.name, tag, exc)
 
-    # 4. Create custom models
+    # 4. Create custom models (delete first if present)
     for cm in config.custom_models:
         if cm.name in existing:
-            result.skipped.append(cm.name)
-            logger.info("[%s] Skipping custom %s (already present)", node.name, cm.name)
-            continue
+            try:
+                delete_model(node.host, cm.name)
+                result.deleted.append(cm.name)
+                logger.info("[%s] Deleted existing custom %s", node.name, cm.name)
+            except Exception as exc:
+                result.failed.append(cm.name)
+                result.errors.append(f"Delete failed for {cm.name}: {exc}")
+                logger.error("[%s] Delete failed for %s: %s", node.name, cm.name, exc)
+                continue
         try:
             create_custom_model(node.host, cm)
             result.created.append(cm.name)
@@ -244,21 +262,26 @@ def provision_node(node: FleetNode, config: FleetConfig) -> NodeResult:
             result.errors.append(f"Create failed for {cm.name}: {exc}")
             logger.error("[%s] Create failed for %s: %s", node.name, cm.name, exc)
 
-    # 5. Select and pull tier3 model
+    # 5. Select and pull tier3 model (delete first if present)
     tier3_tag, tier3_size = select_tier3_model(node.gpu_vram_gb)
     result.tier3_model = tier3_tag
     if tier3_tag in existing:
-        result.skipped.append(tier3_tag)
-        logger.info("[%s] Skipping tier3 %s (already present)", node.name, tier3_tag)
-    else:
         try:
-            pull_model(node.host, tier3_tag)
-            result.pulled.append(tier3_tag)
-            logger.info("[%s] Pulled tier3 %s (~%d GB)", node.name, tier3_tag, tier3_size)
+            delete_model(node.host, tier3_tag)
+            result.deleted.append(tier3_tag)
+            logger.info("[%s] Deleted existing tier3 %s", node.name, tier3_tag)
         except Exception as exc:
             result.failed.append(tier3_tag)
-            result.errors.append(f"Pull failed for tier3 {tier3_tag}: {exc}")
-            logger.error("[%s] Tier3 pull failed for %s: %s", node.name, tier3_tag, exc)
+            result.errors.append(f"Delete failed for tier3 {tier3_tag}: {exc}")
+            logger.error("[%s] Tier3 delete failed for %s: %s", node.name, tier3_tag, exc)
+    try:
+        pull_model(node.host, tier3_tag)
+        result.pulled.append(tier3_tag)
+        logger.info("[%s] Pulled tier3 %s (~%d GB)", node.name, tier3_tag, tier3_size)
+    except Exception as exc:
+        result.failed.append(tier3_tag)
+        result.errors.append(f"Pull failed for tier3 {tier3_tag}: {exc}")
+        logger.error("[%s] Tier3 pull failed for %s: %s", node.name, tier3_tag, exc)
 
     return result
 

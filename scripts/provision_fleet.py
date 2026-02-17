@@ -81,10 +81,10 @@ def main(argv: list[str] | None = None) -> int:
         if not nr.reachable:
             status = "UNREACHABLE"
         print(f"  {nr.node_name}: {status}")
+        if nr.deleted:
+            print(f"    Deleted: {nr.deleted}")
         if nr.pulled:
             print(f"    Pulled:  {nr.pulled}")
-        if nr.skipped:
-            print(f"    Skipped: {nr.skipped}")
         if nr.created:
             print(f"    Created: {nr.created}")
         if nr.tier3_model:

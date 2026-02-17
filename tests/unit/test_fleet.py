@@ -18,6 +18,7 @@ from core.fleet import (
     build_modelfile,
     check_connectivity,
     create_custom_model,
+    delete_model,
     list_existing_models,
     load_fleet_config,
     provision_fleet,
@@ -274,6 +275,18 @@ class TestPullModel:
 
 
 # ===========================================================================
+# TestDeleteModel
+# ===========================================================================
+class TestDeleteModel:
+    @patch("core.fleet._get_client")
+    def test_calls_client_delete(self, mock_gc):
+        client = MagicMock()
+        mock_gc.return_value = client
+        delete_model("http://host:11434", "model:tag")
+        client.delete.assert_called_once_with(model="model:tag")
+
+
+# ===========================================================================
 # TestCreateCustomModel
 # ===========================================================================
 class TestCreateCustomModel:
@@ -326,8 +339,8 @@ class TestProvisionNode:
         assert not result.errors
 
     @patch("core.fleet._get_client")
-    def test_skips_existing_models(self, mock_gc):
-        """Models already present are skipped."""
+    def test_deletes_and_redeploys_existing(self, mock_gc):
+        """Existing models are deleted then re-pulled/created."""
         client = _mock_client(models=[
             {"name": "deepseek-r1:1.5b"},
             {"name": "tier1-micro"},
@@ -340,11 +353,14 @@ class TestProvisionNode:
         result = provision_node(node, config)
 
         assert result.reachable is True
-        assert "deepseek-r1:1.5b" in result.skipped
-        assert "tier1-micro" in result.skipped
-        assert result.tier3_model in result.skipped
-        assert result.pulled == []
-        assert result.created == []
+        assert "deepseek-r1:1.5b" in result.deleted
+        assert "tier1-micro" in result.deleted
+        assert "llama3:70b-instruct-q6_K" in result.deleted
+        assert "deepseek-r1:1.5b" in result.pulled
+        assert "tier1-micro" in result.created
+        assert result.tier3_model in result.pulled
+        assert not result.failed
+        assert client.delete.call_count == 3
 
     @patch("core.fleet._get_client")
     def test_unreachable_node(self, mock_gc):
