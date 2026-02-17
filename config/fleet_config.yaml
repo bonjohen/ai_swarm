@@ -1,0 +1,46 @@
+nodes:
+  - name: desktop-rtx4070
+    host: "http://localhost:11434"
+    platform: windows
+    gpu_type: "RTX 4070"
+    gpu_vram_gb: 12
+    total_memory_gb: 32
+
+  - name: mac-mini-m4
+    host: "http://mac-mini.local:11434"
+    platform: macos
+    gpu_type: "Apple M4"
+    gpu_vram_gb: 24
+    total_memory_gb: 24
+
+  - name: macbook-pro-m4
+    host: "http://macbook.local:11434"
+    platform: macos
+    gpu_type: "Apple M4 Pro"
+    gpu_vram_gb: 64
+    total_memory_gb: 64
+
+  - name: dgx-spark
+    host: "http://spark-5034.local:11434"
+    platform: linux
+    gpu_type: "NVIDIA Grace Blackwell"
+    gpu_vram_gb: 128
+    total_memory_gb: 128
+
+base_models:
+  - "deepseek-r1:1.5b"
+
+custom_models:
+  - name: "tier1-micro"
+    from: "deepseek-r1:1.5b"
+    parameters:
+      num_ctx: 2048
+      num_predict: 128
+      temperature: 0
+
+  - name: "tier2-light"
+    from: "deepseek-r1:1.5b"
+    parameters:
+      num_ctx: 4096
+      num_predict: 1024
+      temperature: 0.2
