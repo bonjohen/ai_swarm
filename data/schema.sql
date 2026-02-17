@@ -220,6 +220,68 @@ CREATE TABLE IF NOT EXISTS learner_events (
 );
 
 -- ============================================================
+-- Story domain tables
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS story_worlds (
+    world_id                  TEXT PRIMARY KEY,
+    name                      TEXT NOT NULL,
+    genre                     TEXT NOT NULL,
+    tone                      TEXT NOT NULL,
+    setting_json              TEXT NOT NULL DEFAULT '{}',
+    thematic_constraints_json TEXT NOT NULL DEFAULT '[]',
+    audience_profile_json     TEXT NOT NULL DEFAULT '{}',
+    current_episode_number    INTEGER NOT NULL DEFAULT 0,
+    current_timeline_position TEXT NOT NULL DEFAULT 'start',
+    created_at                TEXT NOT NULL,
+    updated_at                TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS characters (
+    character_id TEXT PRIMARY KEY,
+    world_id     TEXT NOT NULL REFERENCES story_worlds(world_id),
+    name         TEXT NOT NULL,
+    role         TEXT NOT NULL,
+    arc_stage    TEXT NOT NULL DEFAULT 'introduction',
+    alive        INTEGER NOT NULL DEFAULT 1,
+    traits_json  TEXT NOT NULL DEFAULT '[]',
+    goals_json   TEXT NOT NULL DEFAULT '[]',
+    fears_json   TEXT NOT NULL DEFAULT '[]',
+    beliefs_json TEXT NOT NULL DEFAULT '[]',
+    voice_notes  TEXT NOT NULL DEFAULT '',
+    meta_json    TEXT NOT NULL DEFAULT '{}'
+);
+
+CREATE TABLE IF NOT EXISTS narrative_threads (
+    thread_id                  TEXT PRIMARY KEY,
+    world_id                   TEXT NOT NULL REFERENCES story_worlds(world_id),
+    title                      TEXT NOT NULL,
+    status                     TEXT NOT NULL DEFAULT 'open',
+    introduced_in_episode      INTEGER NOT NULL,
+    resolved_in_episode        INTEGER,
+    thematic_tag               TEXT NOT NULL DEFAULT '',
+    related_character_ids_json TEXT NOT NULL DEFAULT '[]',
+    escalation_points_json     TEXT NOT NULL DEFAULT '[]',
+    meta_json                  TEXT NOT NULL DEFAULT '{}'
+);
+
+CREATE TABLE IF NOT EXISTS episodes (
+    episode_id         TEXT PRIMARY KEY,
+    world_id           TEXT NOT NULL REFERENCES story_worlds(world_id),
+    episode_number     INTEGER NOT NULL,
+    title              TEXT NOT NULL DEFAULT '',
+    act_structure_json TEXT NOT NULL DEFAULT '[]',
+    scene_count        INTEGER NOT NULL DEFAULT 0,
+    word_count         INTEGER NOT NULL DEFAULT 0,
+    tension_curve_json TEXT NOT NULL DEFAULT '[]',
+    snapshot_id        TEXT,
+    run_id             TEXT,
+    status             TEXT NOT NULL DEFAULT 'draft',
+    created_at         TEXT NOT NULL,
+    meta_json          TEXT NOT NULL DEFAULT '{}'
+);
+
+-- ============================================================
 -- Indexes
 -- ============================================================
 
@@ -238,3 +300,8 @@ CREATE INDEX IF NOT EXISTS idx_lab_runs_suite ON lab_runs(suite_id);
 CREATE INDEX IF NOT EXISTS idx_lab_results_run ON lab_results(lab_run_id);
 CREATE INDEX IF NOT EXISTS idx_learner_events_cert ON learner_events(cert_id);
 CREATE INDEX IF NOT EXISTS idx_learner_events_learner ON learner_events(cert_id, learner_id);
+CREATE INDEX IF NOT EXISTS idx_characters_world ON characters(world_id);
+CREATE INDEX IF NOT EXISTS idx_threads_world ON narrative_threads(world_id);
+CREATE INDEX IF NOT EXISTS idx_threads_status ON narrative_threads(world_id, status);
+CREATE INDEX IF NOT EXISTS idx_episodes_world ON episodes(world_id);
+CREATE INDEX IF NOT EXISTS idx_episodes_number ON episodes(world_id, episode_number);
