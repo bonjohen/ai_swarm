@@ -186,9 +186,12 @@ def pull_model(host: str, tag: str) -> None:
 
 def create_custom_model(host: str, custom: CustomModelDef) -> None:
     """Create a custom model on *host* from a CustomModelDef."""
-    modelfile = build_modelfile(custom)
     client = _get_client(host)
-    client.create(model=custom.name, modelfile=modelfile)
+    client.create(
+        model=custom.name,
+        from_=custom.from_model,
+        parameters=custom.parameters or None,
+    )
 
 
 # ---------------------------------------------------------------------------

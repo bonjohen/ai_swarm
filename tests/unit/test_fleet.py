@@ -284,11 +284,23 @@ class TestCreateCustomModel:
         cm = CustomModelDef(name="my-custom", from_model="base:tag",
                             parameters={"num_ctx": 4096})
         create_custom_model("http://host:11434", cm)
-        client.create.assert_called_once()
-        call_kwargs = client.create.call_args
-        assert call_kwargs[1]["model"] == "my-custom"  # keyword arg
-        assert "FROM base:tag" in call_kwargs[1]["modelfile"]
-        assert "PARAMETER num_ctx 4096" in call_kwargs[1]["modelfile"]
+        client.create.assert_called_once_with(
+            model="my-custom",
+            from_="base:tag",
+            parameters={"num_ctx": 4096},
+        )
+
+    @patch("core.fleet._get_client")
+    def test_empty_params_passes_none(self, mock_gc):
+        client = MagicMock()
+        mock_gc.return_value = client
+        cm = CustomModelDef(name="my-custom", from_model="base:tag", parameters={})
+        create_custom_model("http://host:11434", cm)
+        client.create.assert_called_once_with(
+            model="my-custom",
+            from_="base:tag",
+            parameters=None,
+        )
 
 
 # ===========================================================================
