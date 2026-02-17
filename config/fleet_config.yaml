@@ -27,18 +27,17 @@ nodes:
     gpu_vram_gb: 128
     total_memory_gb: 128
 
-base_models:
-  - "deepseek-r1:1.5b"
+base_models: []
 
 custom_models:
-  - name: "tier1-micro"
+  - name: "deepseek-r1:1.5b-tier1-micro"
     from: "deepseek-r1:1.5b"
     parameters:
       num_ctx: 2048
       num_predict: 128
       temperature: 0
 
-  - name: "tier2-light"
+  - name: "deepseek-r1:1.5b-tier2-light"
     from: "deepseek-r1:1.5b"
     parameters:
       num_ctx: 4096

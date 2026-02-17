@@ -51,7 +51,7 @@ def _make_config(nodes=None, base_models=None, custom_models=None) -> FleetConfi
         nodes=nodes or [_make_node()],
         base_models=base_models or ["deepseek-r1:1.5b"],
         custom_models=custom_models or [
-            CustomModelDef(name="tier1-micro", from_model="deepseek-r1:1.5b",
+            CustomModelDef(name="deepseek-r1:1.5b-tier1-micro", from_model="deepseek-r1:1.5b",
                            parameters={"num_ctx": 2048, "temperature": 0}),
         ],
     )
@@ -332,7 +332,7 @@ class TestProvisionNode:
 
         assert result.reachable is True
         assert "deepseek-r1:1.5b" in result.pulled
-        assert "tier1-micro" in result.created
+        assert "deepseek-r1:1.5b-tier1-micro" in result.created
         assert result.tier3_model == "llama3:70b-instruct-q6_K"
         assert result.tier3_model in result.pulled
         assert not result.failed
@@ -343,7 +343,7 @@ class TestProvisionNode:
         """Existing models are deleted then re-pulled/created."""
         client = _mock_client(models=[
             {"name": "deepseek-r1:1.5b"},
-            {"name": "tier1-micro"},
+            {"name": "deepseek-r1:1.5b-tier1-micro"},
             {"name": "llama3:70b-instruct-q6_K"},
         ])
         mock_gc.return_value = client
@@ -354,10 +354,10 @@ class TestProvisionNode:
 
         assert result.reachable is True
         assert "deepseek-r1:1.5b" in result.deleted
-        assert "tier1-micro" in result.deleted
+        assert "deepseek-r1:1.5b-tier1-micro" in result.deleted
         assert "llama3:70b-instruct-q6_K" in result.deleted
         assert "deepseek-r1:1.5b" in result.pulled
-        assert "tier1-micro" in result.created
+        assert "deepseek-r1:1.5b-tier1-micro" in result.created
         assert result.tier3_model in result.pulled
         assert not result.failed
         assert client.delete.call_count == 3

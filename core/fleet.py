@@ -262,7 +262,19 @@ def provision_node(node: FleetNode, config: FleetConfig) -> NodeResult:
             result.errors.append(f"Create failed for {cm.name}: {exc}")
             logger.error("[%s] Create failed for %s: %s", node.name, cm.name, exc)
 
-    # 5. Select and pull tier3 model (delete first if present)
+    # 5. Clean up intermediate base models pulled by create
+    #    (from_model tags that aren't explicitly in base_models)
+    base_set = set(config.base_models)
+    from_tags = {cm.from_model for cm in config.custom_models} - base_set
+    for tag in from_tags:
+        try:
+            delete_model(node.host, tag)
+            result.deleted.append(tag)
+            logger.info("[%s] Cleaned up intermediate %s", node.name, tag)
+        except Exception:
+            pass  # may not exist if create failed; not an error
+
+    # 6. Select and pull tier3 model (delete first if present)
     tier3_tag, tier3_size = select_tier3_model(node.gpu_vram_gb)
     result.tier3_model = tier3_tag
     if tier3_tag in existing:
