@@ -164,3 +164,47 @@ class TestExtractJson:
 
         delta = agent.run({"message": "test"}, model_call=fenced_model)
         assert delta["echoed"] == "Echo: test"
+
+
+# --- validation-feedback retry tests ---
+
+class TestValidationRepair:
+    def test_repair_succeeds_on_second_attempt(self):
+        """Model returns bad output first, then fixes it after repair prompt."""
+        agent = EchoAgent()
+        calls = []
+
+        def model_with_repair(sys_prompt, user_msg):
+            calls.append(user_msg)
+            # First call returns missing key, second call (repair) returns correct output
+            if len(calls) == 1:
+                return '{"wrong": "bad"}'
+            return '{"echoed": "fixed"}'
+
+        delta = agent.run({"message": "test"}, model_call=model_with_repair)
+        assert delta["echoed"] == "fixed"
+        assert len(calls) == 2
+        assert "had an error" in calls[1].lower()
+
+    def test_repair_exhausted_raises(self):
+        """After MAX_REPAIR_ATTEMPTS, the parse/validate error is raised."""
+        agent = EchoAgent()
+
+        def always_bad(sys_prompt, user_msg):
+            return '{"wrong": "bad"}'
+
+        with pytest.raises(KeyError):
+            agent.run({"message": "test"}, model_call=always_bad)
+
+    def test_no_repair_needed_for_valid_output(self):
+        """Valid output on first try — no repair calls made."""
+        agent = EchoAgent()
+        calls = []
+
+        def good_model(sys_prompt, user_msg):
+            calls.append(user_msg)
+            return '{"echoed": "hello"}'
+
+        delta = agent.run({"message": "test"}, model_call=good_model)
+        assert delta["echoed"] == "hello"
+        assert len(calls) == 1  # No repair needed

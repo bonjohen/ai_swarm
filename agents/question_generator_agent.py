@@ -32,12 +32,17 @@ class QuestionGeneratorAgent(BaseAgent):
     )
     USER_TEMPLATE = (
         "Generate questions for these objectives:\n{objectives}\n\n"
-        "Available claims:\n{claims}\n\n"
+        "Available claims (you MUST use claim_id values from this list in grounding_claim_ids):\n{claims}\n\n"
         "Lesson modules for context:\n{modules}\n\n"
-        "Return JSON with:\n"
-        '"questions": [{{"question_id": str, "objective_id": str, "qtype": str, '
+        "Return JSON with this exact schema:\n"
+        '{{"questions": [{{"question_id": str, "objective_id": str, "qtype": str, '
         '"content_json": {{"question": str, "options": [...], "correct_answer": str, "explanation": str}}, '
-        '"grounding_claim_ids": [str]}}]'
+        '"grounding_claim_ids": [str]}}]}}\n\n'
+        "IMPORTANT: Every question MUST have a non-empty \"grounding_claim_ids\" array with at least one claim_id from the available claims.\n\n"
+        "Example of ONE valid question:\n"
+        '{{"question_id": "q-1", "objective_id": "obj-1", "qtype": "multiple_choice", '
+        '"content_json": {{"question": "What is X?", "options": ["A", "B"], "correct_answer": "A", "explanation": "Because..."}}, '
+        '"grounding_claim_ids": ["c1"]}}'
     )
     INPUT_SCHEMA = QuestionGeneratorInput
     OUTPUT_SCHEMA = QuestionGeneratorOutput

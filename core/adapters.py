@@ -36,6 +36,7 @@ class OllamaAdapter:
                 {"role": "user", "content": user_message},
             ],
             "stream": False,
+            "format": "json",
             "options": {
                 "temperature": self.temperature,
                 **self.extra_options,

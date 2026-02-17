@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import re
 from abc import ABC, abstractmethod
 from typing import Any
@@ -86,16 +87,42 @@ class BaseAgent(ABC):
         """Validate parsed output. Raise on failure."""
         ...
 
+    MAX_REPAIR_ATTEMPTS: int = 2
+
     def run(self, state: dict[str, Any], model_call: Any = None) -> dict[str, Any]:
         """Execute the agent: build prompt, call model, parse, validate.
+
+        On validation failure, sends the error back to the model as a repair
+        prompt and retries up to MAX_REPAIR_ATTEMPTS times.
 
         model_call: a callable(system_prompt, user_message) -> str.
         Returns delta_state to be merged into run state.
         """
+        _log = logging.getLogger(__name__)
         system_prompt, user_message = self.build_prompt(state)
         if model_call is None:
             raise RuntimeError("model_call must be provided")
+        last_error: Exception | None = None
         raw_response = model_call(system_prompt, user_message)
-        delta_state = self.parse(extract_json(raw_response))
-        self.validate(delta_state)
-        return delta_state
+
+        for attempt in range(1 + self.MAX_REPAIR_ATTEMPTS):
+            try:
+                delta_state = self.parse(extract_json(raw_response))
+                self.validate(delta_state)
+                return delta_state
+            except (ValueError, KeyError, TypeError) as exc:
+                last_error = exc
+                if attempt >= self.MAX_REPAIR_ATTEMPTS:
+                    break
+                _log.warning(
+                    "Agent %s parse/validate failed (attempt %d/%d): %s — sending repair prompt",
+                    self.AGENT_ID, attempt + 1, self.MAX_REPAIR_ATTEMPTS + 1, exc,
+                )
+                repair_prompt = (
+                    f"Your previous JSON response had an error:\n{exc}\n\n"
+                    f"Original request:\n{user_message}\n\n"
+                    "Please fix the error and return valid JSON only."
+                )
+                raw_response = model_call(system_prompt, repair_prompt)
+
+        raise last_error  # type: ignore[misc]

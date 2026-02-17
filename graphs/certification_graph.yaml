@@ -39,6 +39,9 @@ nodes:
     inputs: [objectives, claims, modules]
     outputs: [questions]
     next: qa_validation
+    retry:
+      max_attempts: 2
+      backoff_seconds: 1.0
 
   qa_validation:
     agent: qa_validator
