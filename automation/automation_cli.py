@@ -32,6 +32,7 @@ from automation.task_schema import (
     generate_task_id,
     parse_task_file,
 )
+from automation.logging import log_event
 from automation.validator import validate_result, validate_task
 
 logger = logging.getLogger(__name__)
@@ -127,6 +128,9 @@ def cmd_create(args: argparse.Namespace) -> int:
         link_parent(state, task_id, args.parent)
     _save_queue_state(cfg, state)
 
+    log_event(cfg, action="task_created", task_id=task_id,
+              details=f"type={args.type} mode={args.mode} priority={args.priority}")
+
     print(f"Created: {task_path}")
     print(f"TASK_ID: {task_id}")
     return 0
@@ -194,9 +198,12 @@ def cmd_validate(args: argparse.Namespace) -> int:
 
     errors = validate_result(result_path)
     if not errors:
+        log_event(cfg, action="validation_passed", task_id=args.task_id)
         print(f"PASS: {result_path}")
         return 0
 
+    log_event(cfg, action="validation_failed", task_id=args.task_id, status="failed",
+              details="; ".join(f"{e.field}: {e.message}" for e in errors))
     print(f"FAIL: {result_path}")
     for err in errors:
         print(f"  [{err.severity}] {err.field}: {err.message}")
@@ -234,6 +241,8 @@ def cmd_archive(args: argparse.Namespace) -> int:
     if moved and task_id not in state.completed and task_id not in state.failed:
         state.completed.append(task_id)
     _save_queue_state(cfg, state)
+
+    log_event(cfg, action="task_archived", task_id=task_id)
 
     print(f"Archived: {dst}")
     return 0

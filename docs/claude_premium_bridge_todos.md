@@ -204,7 +204,7 @@ Implement the task processing flow that Claude Code executes via slash command.
 
 ### B3.1 Task Processor
 
-- [ ] Implement `automation/processor.py`:
+- [X] Implement `automation/processor.py`:
   - `pick_next_task(config) -> TaskFile | None` — get highest-priority pending task
   - `start_processing(config, task_id)`:
     - Move file from `tasks/` to `processing/`
@@ -221,7 +221,7 @@ Implement the task processing flow that Claude Code executes via slash command.
 
 ### B3.2 Result File Writer
 
-- [ ] Implement `automation/result_writer.py`:
+- [X] Implement `automation/result_writer.py`:
   - `write_result(task_id, status, quality_level, output, meta, error=None) -> Path`:
     - Generate proper headers (RESULT_FOR, STATUS, QUALITY_LEVEL, COMPLETED_AT)
     - Write OUTPUT section
@@ -231,12 +231,12 @@ Implement the task processing flow that Claude Code executes via slash command.
 
 ### B3.3 Phase B3 Tests
 
-- [ ] Test `pick_next_task()` returns highest priority pending task
-- [ ] Test `start_processing()` moves file and updates queue
-- [ ] Test `complete_processing()` writes valid result and archives task
-- [ ] Test `fail_processing()` writes FAILED result with ERROR section
-- [ ] Test `write_result()` produces valid result file
-- [ ] Test full lifecycle: create → process → complete → archive
+- [X] Test `pick_next_task()` returns highest priority pending task
+- [X] Test `start_processing()` moves file and updates queue
+- [X] Test `complete_processing()` writes valid result and archives task
+- [X] Test `fail_processing()` writes FAILED result with ERROR section
+- [X] Test `write_result()` produces valid result file
+- [X] Test full lifecycle: create → process → complete → archive
 
 ---
 
@@ -246,7 +246,7 @@ Implement the polling watcher that monitors outputs and updates state.
 
 ### B4.1 Watcher Implementation
 
-- [ ] Implement `automation/watcher.py`:
+- [X] Implement `automation/watcher.py`:
   - `watch(config)` — continuous polling loop:
     - Poll `automation/outputs/` for new `.result.md` files
     - For each new result file:
@@ -259,10 +259,10 @@ Implement the polling watcher that monitors outputs and updates state.
 
 ### B4.2 Phase B4 Tests
 
-- [ ] Test `watch_once()` detects new result file and updates queue
-- [ ] Test `watch_once()` validates result and marks failed on validation error
-- [ ] Test `watch_once()` ignores already-processed results
-- [ ] Test watcher logs structured entries to `automation/logs/system.log`
+- [X] Test `watch_once()` detects new result file and updates queue
+- [X] Test `watch_once()` validates result and marks failed on validation error
+- [X] Test `watch_once()` ignores already-processed results
+- [X] Test watcher logs structured entries to `automation/logs/system.log`
 
 ---
 
@@ -272,17 +272,17 @@ Add structured logging throughout the system.
 
 ### B5.1 Log System
 
-- [ ] Implement `automation/logging.py`:
+- [X] Implement `automation/logging.py`:
   - Structured JSON log entries to `automation/logs/system.log`
   - Each entry: `timestamp`, `task_id`, `action`, `status`, `details`
   - Actions: `task_created`, `task_processing`, `task_completed`, `task_failed`, `task_archived`, `validation_passed`, `validation_failed`, `watcher_poll`
-- [ ] Wire logging into all modules: CLI, processor, watcher, validator
+- [X] Wire logging into all modules: CLI, processor, watcher, validator
 
 ### B5.2 Phase B5 Tests
 
-- [ ] Test log entries written with correct structure
-- [ ] Test all actions produce log entries
-- [ ] Test log file rotation (or verify file doesn't grow unbounded for now)
+- [X] Test log entries written with correct structure
+- [X] Test all actions produce log entries
+- [X] Test log file rotation (or verify file doesn't grow unbounded for now)
 
 ---
 
@@ -292,20 +292,20 @@ Deterministic error handling for all failure modes.
 
 ### B6.1 Error Handling
 
-- [ ] Handle malformed result files: mark FAILED, log structured error
-- [ ] Handle header mismatch (RESULT_FOR doesn't match any known task): log error, skip
-- [ ] Handle missing sections: validation catches and reports each missing section
-- [ ] Handle STATUS != COMPLETE and STATUS != FAILED: treat as malformed
-- [ ] Handle file move failures (permissions, missing directories): log and retry once
-- [ ] Handle queue.json corruption: detect and rebuild from filesystem state
+- [X] Handle malformed result files: mark FAILED, log structured error
+- [X] Handle header mismatch (RESULT_FOR doesn't match any known task): log error, skip
+- [X] Handle missing sections: validation catches and reports each missing section
+- [X] Handle STATUS != COMPLETE and STATUS != FAILED: treat as malformed
+- [X] Handle file move failures (permissions, missing directories): log and retry once
+- [X] Handle queue.json corruption: detect and rebuild from filesystem state
 
 ### B6.2 Phase B6 Tests
 
-- [ ] Test malformed result file triggers FAILED status
-- [ ] Test header mismatch is logged and skipped
-- [ ] Test queue.json rebuild from filesystem state
-- [ ] Test file move retry on transient failure
-- [ ] Test concurrent CLI access doesn't corrupt queue.json
+- [X] Test malformed result file triggers FAILED status
+- [X] Test header mismatch is logged and skipped
+- [X] Test queue.json rebuild from filesystem state
+- [X] Test file move retry on transient failure
+- [X] Test concurrent CLI access doesn't corrupt queue.json
 
 ---
 
