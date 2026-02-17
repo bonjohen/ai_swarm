@@ -376,13 +376,13 @@ Improvements for robustness, observability, and automation.
 
 ---
 
-## Open Decisions (Defaults for v0)
+## Open Decisions (Defaults for v0) [CONFIRMED]
 
-These decisions are recorded here per PRD section 22. Revisit as needed.
+These decisions are recorded here per PRD section 22. All defaults confirmed and implemented.
 
-| Decision | Default (v0) |
-|---|---|
-| Graph runtime | Custom YAML runner (consider LangGraph later) |
-| Model interface | Unified adapter for local + frontier |
-| Citation granularity | segment_id + span offsets |
-| Delta method | Structured diff on claim IDs + statement similarity |
+| Decision | Default (v0) | Status |
+|---|---|---|
+| Graph runtime | Custom YAML runner (`graphs/graph_types.py` + `core/orchestrator.py`) | [X] Implemented — LangGraph deferred |
+| Model interface | Unified adapter for local + frontier (`core/routing.py` — `ModelAdapter` protocol) | [X] Implemented |
+| Citation granularity | segment_id + span offsets (claims link to `doc_id` + `segment_id`) | [X] Implemented |
+| Delta method | Structured diff on claim IDs + statement similarity (`agents/delta_agent.py`) | [X] Implemented |
