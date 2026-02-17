@@ -14,7 +14,7 @@ Establish the repo structure, data layer, orchestrator, and agent framework so t
 - [X] Create package directories: `agents/`, `graphs/`, `core/`, `data/`, `connectors/`, `eval/`, `publish/`, `publish/templates/`, `scripts/`
 - [X] Add `__init__.py` to each package directory
 - [X] Create `publish/out/` directory and add it to `.gitignore`
-- [ ] Create `README.md` with basic project description and CLI usage
+- [X] Create `README.md` with basic project description and CLI usage
 
 ### 0.2 SQLite Schema and Data Layer
 
