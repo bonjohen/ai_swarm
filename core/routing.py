@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Callable, Protocol
+
+import yaml
 
 from agents.base_agent import AgentPolicy
 
@@ -38,11 +41,75 @@ class EscalationCriteria:
 
 
 @dataclass
+class TierConfig:
+    """Configuration for a single inference tier."""
+
+    model: str
+    context_length: int
+    max_tokens: int
+    temperature: float
+    concurrency: int = 1
+
+
+@dataclass
+class ProviderConfig:
+    """Configuration for a Tier 3 frontier provider."""
+
+    name: str
+    provider_type: str  # "ollama", "anthropic", "openai", "dgx"
+    model: str
+    host: str | None = None
+    cost_per_1k_input: float = 0.0
+    cost_per_1k_output: float = 0.0
+    quality_score: float = 0.5
+    max_context: int = 4096
+    tags: list[str] = field(default_factory=list)
+
+
+@dataclass
+class RouterConfig:
+    """Full router configuration loaded from YAML."""
+
+    tier1: TierConfig
+    tier2: TierConfig
+    tier3_providers: list[ProviderConfig]
+    escalation: EscalationCriteria
+    provider_selection_strategy: str = "prefer_local"
+    daily_frontier_cap: int = 100
+
+
+def load_router_config(path: str | Path) -> RouterConfig:
+    """Load router configuration from a YAML file."""
+    with open(path) as f:
+        raw = yaml.safe_load(f)
+
+    tier1 = TierConfig(**raw["tier1"])
+    tier2 = TierConfig(**raw["tier2"])
+
+    providers = []
+    for p in raw.get("tier3_providers", []):
+        providers.append(ProviderConfig(**p))
+
+    esc_raw = raw.get("escalation", {})
+    escalation = EscalationCriteria(**esc_raw)
+
+    return RouterConfig(
+        tier1=tier1,
+        tier2=tier2,
+        tier3_providers=providers,
+        escalation=escalation,
+        provider_selection_strategy=raw.get("provider_selection_strategy", "prefer_local"),
+        daily_frontier_cap=raw.get("daily_frontier_cap", 100),
+    )
+
+
+@dataclass
 class ModelRouter:
     """Routes agent calls to local or frontier models based on policy and state."""
     local_adapters: dict[str, ModelAdapter] = field(default_factory=dict)
     frontier_adapters: dict[str, ModelAdapter] = field(default_factory=dict)
     escalation_criteria: EscalationCriteria = field(default_factory=EscalationCriteria)
+    config: RouterConfig | None = None
 
     def register_local(self, adapter: ModelAdapter) -> None:
         self.local_adapters[adapter.name] = adapter

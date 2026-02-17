@@ -2,6 +2,8 @@
 
 All items below are derived from `docs/router_escalation_chain.md`. Each phase is ordered by dependency — complete earlier phases before starting later ones.
 
+Set the checkbox to [~] while you are working on it, and to [X] when complete.
+
 **Key design decisions:**
 - Router operates at **two layers**: Tier 0 regex dispatches requests to graphs/tools; Tiers 1-3 select model per-node inside the orchestrator.
 - **Tier 1 and Tier 2 are both `deepseek-r1:1.5b`**, same model, different configurations:

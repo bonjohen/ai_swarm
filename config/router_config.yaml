@@ -1,0 +1,49 @@
+tier1:
+  model: "deepseek-r1:1.5b"
+  context_length: 2048
+  max_tokens: 128
+  temperature: 0.0
+  concurrency: 8
+
+tier2:
+  model: "deepseek-r1:1.5b"
+  context_length: 4096
+  max_tokens: 1024
+  temperature: 0.2
+  concurrency: 4
+
+tier3_providers:
+  - name: dgx_spark
+    provider_type: dgx
+    model: "llama3:70b-instruct-q5_K_M"
+    host: "http://dgx-spark:11434"
+    cost_per_1k_input: 0.001
+    cost_per_1k_output: 0.002
+    quality_score: 0.85
+    max_context: 8192
+    tags: [local, dgx, frontier]
+  - name: anthropic_claude
+    provider_type: anthropic
+    model: "claude-sonnet-4-5-20250929"
+    cost_per_1k_input: 0.003
+    cost_per_1k_output: 0.015
+    quality_score: 0.95
+    max_context: 200000
+    tags: [cloud, frontier]
+  - name: openai_gpt4
+    provider_type: openai
+    model: "gpt-4o"
+    cost_per_1k_input: 0.0025
+    cost_per_1k_output: 0.01
+    quality_score: 0.92
+    max_context: 128000
+    tags: [cloud, frontier]
+
+escalation:
+  min_confidence: 0.75
+  max_missing_citations: 2
+  max_contradiction_ambiguity: 0.5
+  synthesis_complexity_threshold: 0.8
+
+provider_selection_strategy: "prefer_local"
+daily_frontier_cap: 100

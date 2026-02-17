@@ -282,6 +282,29 @@ CREATE TABLE IF NOT EXISTS episodes (
 );
 
 -- ============================================================
+-- Router telemetry tables
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS routing_decisions (
+    decision_id     TEXT PRIMARY KEY,
+    run_id          TEXT,
+    node_id         TEXT,
+    agent_id        TEXT,
+    request_tier    INTEGER NOT NULL,
+    chosen_tier     INTEGER NOT NULL,
+    provider        TEXT,
+    escalation_reason TEXT,
+    confidence      REAL,
+    complexity_score REAL,
+    quality_score   REAL,
+    latency_ms      REAL,
+    tokens_in       INTEGER,
+    tokens_out      INTEGER,
+    cost_usd        REAL,
+    created_at      TEXT NOT NULL
+);
+
+-- ============================================================
 -- Indexes
 -- ============================================================
 
@@ -305,3 +328,4 @@ CREATE INDEX IF NOT EXISTS idx_threads_world ON narrative_threads(world_id);
 CREATE INDEX IF NOT EXISTS idx_threads_status ON narrative_threads(world_id, status);
 CREATE INDEX IF NOT EXISTS idx_episodes_world ON episodes(world_id);
 CREATE INDEX IF NOT EXISTS idx_episodes_number ON episodes(world_id, episode_number);
+CREATE INDEX IF NOT EXISTS idx_routing_decisions_run ON routing_decisions(run_id);
