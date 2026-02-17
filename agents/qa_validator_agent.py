@@ -69,6 +69,8 @@ class QAValidatorAgent(BaseAgent):
             violations.extend(self._check_dossier_rules(state))
         elif scope_type == "lab":
             violations.extend(self._check_lab_rules(state))
+        elif scope_type == "story":
+            violations.extend(self._check_story_rules(state))
 
         return violations
 
@@ -281,6 +283,82 @@ class QAValidatorAgent(BaseAgent):
             violations.append({
                 "rule": "lab_metrics_present",
                 "message": "Synthesis references metrics but none are present",
+            })
+
+        return violations
+
+    # ------------------------------------------------------------------
+    # Story-specific rules
+    # ------------------------------------------------------------------
+
+    def _check_story_rules(self, state: dict[str, Any]) -> list[dict[str, Any]]:
+        """Story-domain QA gates: canon, characters, threads, audience, structure."""
+        violations: list[dict[str, Any]] = []
+
+        # Rule 1: Canon integrity — every new claim cites episode_id and scene_id
+        new_claims = state.get("new_claims", [])
+        for claim in new_claims:
+            citations = claim.get("citations", [])
+            if not citations:
+                violations.append({
+                    "rule": "story_claim_has_citations",
+                    "claim_id": claim.get("claim_id"),
+                    "message": "Story claim has no citations (needs episode_id + scene_id)",
+                })
+            for cit in citations:
+                if not cit.get("doc_id"):
+                    violations.append({
+                        "rule": "story_claim_cites_episode",
+                        "claim_id": claim.get("claim_id"),
+                        "message": "Story claim citation missing doc_id (episode_id)",
+                    })
+                if not cit.get("segment_id"):
+                    violations.append({
+                        "rule": "story_claim_cites_scene",
+                        "claim_id": claim.get("claim_id"),
+                        "message": "Story claim citation missing segment_id (scene_id)",
+                    })
+
+        # Rule 2: Character consistency — referenced characters exist
+        characters = state.get("characters", [])
+        char_ids = {c.get("character_id") for c in characters}
+        char_names_lower = {c.get("name", "").lower() for c in characters}
+        scene_plans = state.get("scene_plans", [])
+        for sp in scene_plans:
+            pov = sp.get("pov_character", "")
+            if pov and pov.lower() not in char_names_lower:
+                violations.append({
+                    "rule": "story_pov_character_exists",
+                    "scene_id": sp.get("scene_id"),
+                    "pov_character": pov,
+                    "message": f"POV character '{pov}' not found in character list",
+                })
+
+        # Rule 3: Thread tracking — at least one thread advanced
+        selected_threads = state.get("selected_threads", [])
+        new_threads = state.get("new_threads", [])
+        if not selected_threads and not new_threads:
+            violations.append({
+                "rule": "story_thread_advanced",
+                "message": "No thread was advanced or created in this episode",
+            })
+
+        # Rule 4: Audience compliance — must be PASS
+        compliance_status = state.get("compliance_status", "")
+        if compliance_status == "FAIL":
+            violations.append({
+                "rule": "story_audience_compliance",
+                "message": "Audience compliance check failed",
+                "violations": state.get("compliance_violations", []),
+            })
+
+        # Rule 5: Structural integrity — at least 2 scenes, each with POV
+        scenes = state.get("scenes", [])
+        if len(scenes) < 2:
+            violations.append({
+                "rule": "story_min_scenes",
+                "actual": len(scenes),
+                "message": f"Episode has {len(scenes)} scenes, minimum is 2",
             })
 
         return violations

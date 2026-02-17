@@ -1,0 +1,54 @@
+{
+  "world": {
+    "world_id": "eldoria-1",
+    "name": "Eldoria",
+    "genre": "fantasy",
+    "tone": "whimsical",
+    "setting": {
+      "geography": "Floating islands connected by rope bridges",
+      "magic_system": "Crystal-powered elemental magic",
+      "technology": "Pre-industrial, wind-powered"
+    },
+    "thematic_constraints": ["friendship", "courage", "discovery"],
+    "audience_profile": {
+      "age_range": "8-12",
+      "vocabulary_level": "intermediate",
+      "tolerance_for_violence": "mild",
+      "tolerance_for_complexity": "moderate",
+      "preferred_tone": "whimsical",
+      "reading_duration_target": "10-15 minutes",
+      "moral_density_preference": "light",
+      "pacing_preference": "fast"
+    }
+  },
+  "characters": [
+    {
+      "character_id": "char-aria",
+      "name": "Aria",
+      "role": "protagonist",
+      "traits": ["brave", "curious", "impulsive"],
+      "goals": ["discover the source of the crystal storms"],
+      "fears": ["losing her friends", "the dark below the clouds"],
+      "beliefs": ["everyone deserves a second chance"],
+      "voice_notes": "Speaks in short, excited bursts. Uses nature metaphors."
+    },
+    {
+      "character_id": "char-bram",
+      "name": "Bram",
+      "role": "supporting",
+      "traits": ["loyal", "cautious", "inventive"],
+      "goals": ["build a flying machine"],
+      "fears": ["heights (ironic for an island dweller)"],
+      "beliefs": ["preparation beats luck"],
+      "voice_notes": "Measured speech, often starts sentences with 'Well, actually...'"
+    }
+  ],
+  "threads": [
+    {
+      "thread_id": "thread-crystal-storms",
+      "title": "The Crystal Storms",
+      "thematic_tag": "mystery",
+      "related_character_ids": ["char-aria"]
+    }
+  ]
+}

@@ -1,0 +1,75 @@
+id: story_graph
+entry: world_memory_load
+nodes:
+  world_memory_load:
+    agent: story_memory_loader
+    inputs: [world_id, conn]
+    outputs: [world_state, characters, active_threads, previous_snapshot, existing_claims, episode_number, audience_profile]
+    next: premise
+
+  premise:
+    agent: premise_architect
+    inputs: [world_state, characters, active_threads, audience_profile]
+    outputs: [premise, episode_title, selected_threads]
+    next: plot
+
+  plot:
+    agent: plot_architect
+    inputs: [premise, characters, active_threads, selected_threads, audience_profile]
+    outputs: [act_structure, scene_plans]
+    next: scene_writing
+
+  scene_writing:
+    agent: scene_writer
+    inputs: [act_structure, scene_plans, characters, world_state, audience_profile]
+    outputs: [scenes, episode_text]
+    next: canon_update
+    retry:
+      max_attempts: 2
+      backoff_seconds: 1.0
+
+  canon_update:
+    agent: canon_updater
+    inputs: [scenes, characters, world_state, existing_claims]
+    outputs: [new_claims, updated_characters, new_threads, resolved_threads, new_entities]
+    next: contradiction_check
+
+  contradiction_check:
+    agent: contradiction
+    inputs: [claims, existing_claims]
+    outputs: [contradictions, updated_claim_ids]
+    next: audience_check
+    retry:
+      max_attempts: 2
+      backoff_seconds: 1.0
+
+  audience_check:
+    agent: audience_compliance
+    inputs: [episode_text, audience_profile]
+    outputs: [compliance_status, compliance_violations]
+    next: qa_validation
+
+  qa_validation:
+    agent: qa_validator
+    inputs: [claims, doc_ids, segment_ids]
+    outputs: [gate_status, violations]
+    next: snapshot
+    on_fail: scene_writing
+
+  snapshot:
+    agent: delta
+    inputs: [claims, metrics]
+    outputs: [snapshot_id, delta_id, delta_json, stability_score]
+    next: narration
+
+  narration:
+    agent: narration_formatter
+    inputs: [episode_text, characters, episode_title, delta_json]
+    outputs: [narration_script, recap]
+    next: publish
+
+  publish:
+    agent: publisher
+    inputs: [snapshot_id, delta_id]
+    outputs: [publish_dir, manifest, artifacts]
+    end: true

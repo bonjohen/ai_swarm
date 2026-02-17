@@ -43,6 +43,12 @@ def _suite_version(state: dict[str, Any]) -> str:
     return f"{suite_id}-{snap}"
 
 
+def _episode_version(state: dict[str, Any]) -> str:
+    """Episode-number version for story publishes: E001, E002, etc."""
+    ep_num = state.get("episode_number", 1)
+    return f"E{ep_num:03d}"
+
+
 def auto_version(scope_type: str, state: dict[str, Any], publish_root: Path = PUBLISH_ROOT) -> str:
     """Generate a version label based on scope_type."""
     if scope_type == "cert":
@@ -51,6 +57,8 @@ def auto_version(scope_type: str, state: dict[str, Any], publish_root: Path = PU
         return _date_version()
     elif scope_type == "lab":
         return _suite_version(state)
+    elif scope_type == "story":
+        return _episode_version(state)
     else:
         # Fallback: short snapshot hash
         return state.get("snapshot_id", "unknown")[:8]
@@ -137,7 +145,8 @@ class PublisherAgent(BaseAgent):
         artifact_data = {}
 
         for key in ("claims", "entities", "modules", "questions", "metrics",
-                     "metric_points", "synthesis", "delta_json", "scores", "results"):
+                     "metric_points", "synthesis", "delta_json", "scores", "results",
+                     "new_claims", "scenes", "narration_script", "recap", "episode_text"):
             if key in state and state[key]:
                 artifact_data[key] = state[key]
 

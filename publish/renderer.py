@@ -338,6 +338,70 @@ def export_cert_questions_csv(questions: list[dict]) -> str:
 # Top-level render dispatcher
 # ---------------------------------------------------------------------------
 
+def render_story_markdown(state: dict[str, Any]) -> str:
+    """Render story artifacts to Markdown."""
+    parts: list[str] = []
+    scope_id = state.get("scope_id", "unknown")
+    version = state.get("manifest", {}).get("version", "")
+    episode_title = state.get("episode_title", "Untitled Episode")
+
+    parts.append(_md_h1(f"Episode: {episode_title}"))
+    if version:
+        parts.append(f"**Version:** {version} | **World:** {scope_id}\n\n")
+
+    # Recap
+    recap = state.get("recap", "")
+    if recap:
+        parts.append(_md_h2("Previously On..."))
+        parts.append(f"{recap}\n\n")
+
+    # Scenes
+    scenes = state.get("scenes", [])
+    if scenes:
+        for scene in scenes:
+            scene_id = scene.get("scene_id", "")
+            text = scene.get("text", "")
+            wc = scene.get("word_count", 0)
+            parts.append(_md_h2(f"Scene: {scene_id}"))
+            parts.append(f"{text}\n\n")
+            parts.append(f"*({wc} words)*\n\n")
+
+    # Episode stats
+    episode_text = state.get("episode_text", "")
+    if episode_text:
+        word_count = len(episode_text.split())
+        parts.append(f"---\n\n**Total word count:** {word_count}\n\n")
+
+    # Canon changes
+    new_claims = state.get("new_claims", [])
+    if new_claims:
+        parts.append(_md_h2("Canon Updates"))
+        rows = []
+        for cl in new_claims:
+            rows.append([
+                cl.get("claim_id", ""),
+                cl.get("claim_type", ""),
+                cl.get("statement", ""),
+            ])
+        parts.append(_md_table(["ID", "Type", "Statement"], rows))
+
+    # Delta
+    delta = state.get("delta_json", {})
+    if delta:
+        parts.append(_md_h2("Changes Since Last Episode"))
+        added = delta.get("added_claims", [])
+        removed = delta.get("removed_claims", [])
+        if added:
+            parts.append(f"**New claims:** {len(added)}\n\n")
+        if removed:
+            parts.append(f"**Removed claims:** {len(removed)}\n\n")
+        stability = state.get("stability_score")
+        if stability is not None:
+            parts.append(f"**Stability score:** {stability}\n\n")
+
+    return "".join(parts)
+
+
 def render_markdown(scope_type: str, state: dict[str, Any]) -> str:
     """Dispatch to the appropriate renderer based on scope_type."""
     if scope_type == "cert":
@@ -346,6 +410,8 @@ def render_markdown(scope_type: str, state: dict[str, Any]) -> str:
         return render_dossier_markdown(state)
     elif scope_type == "lab":
         return render_lab_markdown(state)
+    elif scope_type == "story":
+        return render_story_markdown(state)
     else:
         raise ValueError(f"Unknown scope_type for rendering: {scope_type}")
 
