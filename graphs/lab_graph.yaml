@@ -1,0 +1,44 @@
+id: lab_graph
+entry: suite_assembly
+nodes:
+  suite_assembly:
+    agent: ingestor
+    inputs: [suite_config]
+    outputs: [doc_ids, segment_ids, source_docs, source_segments]
+    next: benchmark_run
+
+  benchmark_run:
+    agent: synthesizer
+    inputs: [tasks, models]
+    outputs: [synthesis]
+    next: scoring
+
+  scoring:
+    agent: metric_extractor
+    inputs: [normalized_segments]
+    outputs: [metrics, metric_points]
+    next: trend_metrics
+
+  trend_metrics:
+    agent: synthesizer
+    inputs: [metrics, metric_points]
+    outputs: [synthesis]
+    next: routing_recommendation
+
+  routing_recommendation:
+    agent: synthesizer
+    inputs: [synthesis, metrics]
+    outputs: [synthesis]
+    next: snapshot
+
+  snapshot:
+    agent: delta
+    inputs: [claims, metrics]
+    outputs: [snapshot_id, delta_id, delta_json, stability_score]
+    next: publish
+
+  publish:
+    agent: publisher
+    inputs: [snapshot_id, delta_id]
+    outputs: [publish_dir, manifest, artifacts]
+    end: true

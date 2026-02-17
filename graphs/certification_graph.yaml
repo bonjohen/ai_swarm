@@ -1,0 +1,60 @@
+id: certification_graph
+entry: blueprint_ingest
+nodes:
+  blueprint_ingest:
+    agent: ingestor
+    inputs: [sources]
+    outputs: [doc_ids, segment_ids, source_docs, source_segments]
+    next: objective_graph
+
+  objective_graph:
+    agent: entity_resolver
+    inputs: [source_segments]
+    outputs: [entities, relationships, objectives]
+    next: grounding_sweep
+
+  grounding_sweep:
+    agent: normalizer
+    inputs: [source_segments]
+    outputs: [normalized_segments]
+    next: claim_extraction
+
+  claim_extraction:
+    agent: claim_extractor
+    inputs: [normalized_segments, entities]
+    outputs: [claims]
+    next: lesson_composition
+    retry:
+      max_attempts: 2
+      backoff_seconds: 1.0
+
+  lesson_composition:
+    agent: lesson_composer
+    inputs: [objectives, claims, entities]
+    outputs: [modules]
+    next: question_generation
+
+  question_generation:
+    agent: question_generator
+    inputs: [objectives, claims, modules]
+    outputs: [questions]
+    next: qa_validation
+
+  qa_validation:
+    agent: qa_validator
+    inputs: [claims, doc_ids, segment_ids]
+    outputs: [gate_status, violations]
+    next: snapshot
+    on_fail: claim_extraction
+
+  snapshot:
+    agent: delta
+    inputs: [claims, metrics]
+    outputs: [snapshot_id, delta_id, delta_json, stability_score]
+    next: publish
+
+  publish:
+    agent: publisher
+    inputs: [snapshot_id, delta_id]
+    outputs: [publish_dir, manifest, artifacts]
+    end: true
