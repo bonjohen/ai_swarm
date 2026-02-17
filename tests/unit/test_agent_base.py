@@ -5,7 +5,7 @@ import json
 import pytest
 from pydantic import BaseModel
 
-from agents.base_agent import AgentPolicy, BaseAgent
+from agents.base_agent import AgentPolicy, BaseAgent, extract_json
 from agents import registry
 
 
@@ -106,3 +106,61 @@ def test_registry_get_missing_raises():
 def test_registry_list_agents():
     registry.register(EchoAgent())
     assert "echo" in registry.list_agents()
+
+
+# --- extract_json tests ---
+
+class TestExtractJson:
+    def test_clean_json_passthrough(self):
+        raw = '{"key": "value"}'
+        assert extract_json(raw) == '{"key": "value"}'
+
+    def test_clean_json_with_whitespace(self):
+        raw = '  \n{"key": "value"}\n  '
+        assert extract_json(raw) == '{"key": "value"}'
+
+    def test_markdown_fences_json_tag(self):
+        raw = '```json\n{"key": "value"}\n```'
+        assert extract_json(raw) == '{"key": "value"}'
+
+    def test_markdown_fences_no_tag(self):
+        raw = '```\n{"key": "value"}\n```'
+        assert extract_json(raw) == '{"key": "value"}'
+
+    def test_preamble_text(self):
+        raw = 'Here is the result:\n{"key": "value"}'
+        assert extract_json(raw) == '{"key": "value"}'
+
+    def test_postamble_text(self):
+        raw = '{"key": "value"}\n\nLet me know if you need anything else.'
+        assert extract_json(raw) == '{"key": "value"}'
+
+    def test_preamble_and_postamble(self):
+        raw = 'Sure! Here you go:\n{"key": "value"}\nHope that helps!'
+        assert extract_json(raw) == '{"key": "value"}'
+
+    def test_nested_braces(self):
+        raw = 'Result:\n{"outer": {"inner": "val"}}'
+        result = extract_json(raw)
+        parsed = json.loads(result)
+        assert parsed == {"outer": {"inner": "val"}}
+
+    def test_array_response(self):
+        raw = 'Here:\n[{"a": 1}, {"b": 2}]'
+        result = extract_json(raw)
+        parsed = json.loads(result)
+        assert parsed == [{"a": 1}, {"b": 2}]
+
+    def test_no_json_falls_through(self):
+        raw = 'no json here'
+        assert extract_json(raw) == 'no json here'
+
+    def test_run_uses_extract_json(self):
+        """BaseAgent.run() should handle markdown-fenced responses."""
+        agent = EchoAgent()
+
+        def fenced_model(sys_prompt, user_msg):
+            return '```json\n{"echoed": "' + user_msg + '"}\n```'
+
+        delta = agent.run({"message": "test"}, model_call=fenced_model)
+        assert delta["echoed"] == "Echo: test"

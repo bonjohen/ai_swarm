@@ -2,10 +2,44 @@
 
 from __future__ import annotations
 
+import re
 from abc import ABC, abstractmethod
 from typing import Any
 
 from pydantic import BaseModel
+
+
+def extract_json(text: str) -> str:
+    """Extract JSON from an LLM response that may contain markdown fences or prose.
+
+    Handles:
+    - Clean JSON (returned as-is after strip)
+    - Markdown code fences (```json ... ``` or ``` ... ```)
+    - Preamble/postamble text around a JSON object or array
+    """
+    stripped = text.strip()
+
+    # 1. Strip markdown code fences
+    m = re.search(r"```(?:json)?\s*\n?(.*?)\n?\s*```", stripped, re.DOTALL)
+    if m:
+        return m.group(1).strip()
+
+    # 2. Find outermost { ... } or [ ... ] (whichever appears first)
+    pairs = [("{", "}"), ("[", "]")]
+    brace_pos = stripped.find("{")
+    bracket_pos = stripped.find("[")
+    if bracket_pos != -1 and (brace_pos == -1 or bracket_pos < brace_pos):
+        pairs = [("[", "]"), ("{", "}")]
+    for open_ch, close_ch in pairs:
+        start = stripped.find(open_ch)
+        if start == -1:
+            continue
+        end = stripped.rfind(close_ch)
+        if end > start:
+            return stripped[start:end + 1]
+
+    # 3. Fall through — return stripped text and let json.loads give the error
+    return stripped
 
 
 class AgentPolicy(BaseModel):
@@ -62,6 +96,6 @@ class BaseAgent(ABC):
         if model_call is None:
             raise RuntimeError("model_call must be provided")
         raw_response = model_call(system_prompt, user_message)
-        delta_state = self.parse(raw_response)
+        delta_state = self.parse(extract_json(raw_response))
         self.validate(delta_state)
         return delta_state

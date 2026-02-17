@@ -1,0 +1,12 @@
+{
+  "sources": [
+    {"uri": "http://cert.example.com/cloud-fundamentals", "source_type": "web"},
+    {"uri": "http://cert.example.com/security-basics", "source_type": "web"}
+  ],
+  "objectives": [
+    {"objective_id": "obj-1", "cert_id": "aws-101", "code": "1.1", "text": "Cloud Fundamentals", "weight": 1.0},
+    {"objective_id": "obj-2", "cert_id": "aws-101", "code": "1.2", "text": "Security Basics", "weight": 0.5}
+  ],
+  "existing_claims": [],
+  "metrics": []
+}
