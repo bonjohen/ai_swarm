@@ -20,18 +20,18 @@ Bootstrap the directory layout, config file, and queue state file.
 
 ### B0.1 Directory Bootstrap
 
-- [ ] Create `automation/` base directory structure:
+- [X] Create `automation/` base directory structure:
   - `automation/tasks/` — new tasks written by OpenClaw
   - `automation/processing/` — tasks currently being handled
   - `automation/outputs/` — Claude results
   - `automation/archive/` — completed tasks
   - `automation/schemas/` — reusable prompt templates
   - `automation/logs/` — structured log files
-- [ ] Create `scripts/bootstrap_automation.py` — idempotent script that creates all directories and initializes empty files
+- [X] Create `scripts/bootstrap_automation.py` — idempotent script that creates all directories and initializes empty files
 
 ### B0.2 Configuration File
 
-- [ ] Create `automation/config.yaml`:
+- [X] Create `automation/config.yaml`:
   - `paths.base`: `automation`
   - `paths.tasks`: `automation/tasks`
   - `paths.processing`: `automation/processing`
@@ -41,15 +41,15 @@ Bootstrap the directory layout, config file, and queue state file.
   - `validation.require_meta`: `true`
   - `validation.require_success_criteria`: `true`
   - `watcher.interval_seconds`: `5`
-- [ ] Implement `automation/config.py` — `load_config(path) -> AutomationConfig` dataclass
+- [X] Implement `automation/config.py` — `load_config(path) -> AutomationConfig` dataclass
 
 ### B0.3 Queue State File
 
-- [ ] Create `automation/queue.json` with initial structure:
+- [X] Create `automation/queue.json` with initial structure:
   ```json
   {"pending": [], "processing": [], "completed": [], "failed": []}
   ```
-- [ ] Implement `automation/queue.py`:
+- [X] Implement `automation/queue.py`:
   - `load_queue(path) -> QueueState`
   - `save_queue(path, state)` — atomic write (write tmp then rename)
   - `add_pending(state, task_id)`
@@ -60,12 +60,12 @@ Bootstrap the directory layout, config file, and queue state file.
 
 ### B0.4 Phase B0 Tests
 
-- [ ] Test bootstrap script creates all directories idempotently
-- [ ] Test `load_config()` parses config.yaml correctly
-- [ ] Test `load_queue()` / `save_queue()` round-trip
-- [ ] Test queue state transitions: pending → processing → completed
-- [ ] Test queue state transitions: pending → processing → failed
-- [ ] Test atomic write (no corruption on concurrent access)
+- [X] Test bootstrap script creates all directories idempotently
+- [X] Test `load_config()` parses config.yaml correctly
+- [X] Test `load_queue()` / `save_queue()` round-trip
+- [X] Test queue state transitions: pending → processing → completed
+- [X] Test queue state transitions: pending → processing → failed
+- [X] Test atomic write (no corruption on concurrent access)
 
 ---
 
@@ -75,7 +75,7 @@ Define task file format, create validator, and build example templates.
 
 ### B1.1 Task File Schema
 
-- [ ] Implement `automation/task_schema.py`:
+- [X] Implement `automation/task_schema.py`:
   - `TaskHeader` dataclass:
     - `task_id: str` — format `YYYY-MM-DD-###`
     - `mode: str` — `FAST | BALANCED | PREMIUM`
@@ -90,12 +90,12 @@ Define task file format, create validator, and build example templates.
     - `constraints: str`
     - `deliverable: str`
     - `success_criteria: str`
-- [ ] Implement `parse_task_file(path) -> TaskFile` — parse markdown headers and sections
-- [ ] Implement `generate_task_id() -> str` — auto-increment `YYYY-MM-DD-###` based on existing tasks
+- [X] Implement `parse_task_file(path) -> TaskFile` — parse markdown headers and sections
+- [X] Implement `generate_task_id() -> str` — auto-increment `YYYY-MM-DD-###` based on existing tasks
 
 ### B1.2 Validator
 
-- [ ] Implement `automation/validator.py`:
+- [X] Implement `automation/validator.py`:
   - `validate_task(path) -> list[ValidationError]`:
     - TASK_ID present and matches filename
     - All required headers present (MODE, TASK_TYPE, PRIORITY, OUTPUT_FORMAT, CREATED_AT)
@@ -117,21 +117,21 @@ Define task file format, create validator, and build example templates.
 
 ### B1.3 Templates
 
-- [ ] Create `automation/schemas/task_template.md` — example task file with all required headers/sections
-- [ ] Create `automation/schemas/result_template.md` — example result file with all required headers/sections
+- [X] Create `automation/schemas/task_template.md` — example task file with all required headers/sections
+- [X] Create `automation/schemas/result_template.md` — example result file with all required headers/sections
 
 ### B1.4 Phase B1 Tests
 
-- [ ] Test `parse_task_file()` with valid task file
-- [ ] Test `parse_task_file()` with missing headers raises errors
-- [ ] Test `parse_task_file()` with missing sections raises errors
-- [ ] Test `validate_task()` returns no errors for valid file
-- [ ] Test `validate_task()` catches TASK_ID / filename mismatch
-- [ ] Test `validate_task()` catches invalid MODE, TASK_TYPE, PRIORITY values
-- [ ] Test `validate_result()` with valid COMPLETE result
-- [ ] Test `validate_result()` with valid FAILED result (ERROR section present)
-- [ ] Test `validate_result()` catches missing OUTPUT section
-- [ ] Test `generate_task_id()` auto-increments correctly
+- [X] Test `parse_task_file()` with valid task file
+- [X] Test `parse_task_file()` with missing headers raises errors
+- [X] Test `parse_task_file()` with missing sections raises errors
+- [X] Test `validate_task()` returns no errors for valid file
+- [X] Test `validate_task()` catches TASK_ID / filename mismatch
+- [X] Test `validate_task()` catches invalid MODE, TASK_TYPE, PRIORITY values
+- [X] Test `validate_result()` with valid COMPLETE result
+- [X] Test `validate_result()` with valid FAILED result (ERROR section present)
+- [X] Test `validate_result()` catches missing OUTPUT section
+- [X] Test `generate_task_id()` auto-increments correctly
 
 ---
 
@@ -141,13 +141,13 @@ Build the CLI tool for task creation, listing, validation, and archiving.
 
 ### B2.1 CLI Framework
 
-- [ ] Implement `automation/automation_cli.py` using argparse:
+- [X] Implement `automation/automation_cli.py` using argparse:
   - Subcommands: `create`, `list`, `validate`, `archive`, `status`
   - Global options: `--config` (path to config.yaml), `-v` (verbose)
 
 ### B2.2 Create Command
 
-- [ ] `python automation_cli.py create --type <TASK_TYPE> --mode <MODE> --title "<title>" [--priority <PRIORITY>] [--format <OUTPUT_FORMAT>] [--parent <TASK_ID>]`:
+- [X] `python automation_cli.py create --type <TASK_TYPE> --mode <MODE> --title "<title>" [--priority <PRIORITY>] [--format <OUTPUT_FORMAT>] [--parent <TASK_ID>]`:
   - Generate TASK_ID via `generate_task_id()`
   - Create task file from template with populated headers
   - Add CONTEXT, CONSTRAINTS, DELIVERABLE, SUCCESS_CRITERIA sections (placeholder text)
@@ -157,14 +157,14 @@ Build the CLI tool for task creation, listing, validation, and archiving.
 
 ### B2.3 List Command
 
-- [ ] `python automation_cli.py list [--status pending|processing|completed|failed] [--all]`:
+- [X] `python automation_cli.py list [--status pending|processing|completed|failed] [--all]`:
   - Read queue.json
   - Display task IDs grouped by status
   - Show task type, mode, priority, created_at for each
 
 ### B2.4 Validate Command
 
-- [ ] `python automation_cli.py validate <TASK_ID>`:
+- [X] `python automation_cli.py validate <TASK_ID>`:
   - Find result file in `automation/outputs/<TASK_ID>.result.md`
   - Run `validate_result()` on it
   - Print validation results (pass/fail with details)
@@ -172,29 +172,29 @@ Build the CLI tool for task creation, listing, validation, and archiving.
 
 ### B2.5 Archive Command
 
-- [ ] `python automation_cli.py archive <TASK_ID>`:
+- [X] `python automation_cli.py archive <TASK_ID>`:
   - Move task file from current location to `automation/archive/`
   - Update queue.json accordingly
   - Print confirmation
 
 ### B2.6 Status Command
 
-- [ ] `python automation_cli.py status`:
+- [X] `python automation_cli.py status`:
   - Read queue.json
   - Print counts: pending, processing, completed, failed
   - Print dependency chain for any tasks with PARENT_TASK
 
 ### B2.7 Phase B2 Tests
 
-- [ ] Test `create` generates valid task file with correct headers
-- [ ] Test `create` updates queue.json
-- [ ] Test `create --parent` links parent task
-- [ ] Test `list` shows tasks grouped by status
-- [ ] Test `list --status pending` filters correctly
-- [ ] Test `validate` passes for valid result file
-- [ ] Test `validate` fails for malformed result file
-- [ ] Test `archive` moves file and updates queue
-- [ ] Test `status` shows correct counts
+- [X] Test `create` generates valid task file with correct headers
+- [X] Test `create` updates queue.json
+- [X] Test `create --parent` links parent task
+- [X] Test `list` shows tasks grouped by status
+- [X] Test `list --status pending` filters correctly
+- [X] Test `validate` passes for valid result file
+- [X] Test `validate` fails for malformed result file
+- [X] Test `archive` moves file and updates queue
+- [X] Test `status` shows correct counts
 
 ---
 
