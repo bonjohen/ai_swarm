@@ -26,7 +26,7 @@ from agents.synthesizer_agent import SynthesizerAgent
 from core.budgets import BudgetLedger
 from core.notifications import dispatch_notifications, load_hooks
 from core.orchestrator import execute_graph
-from core.routing import make_stub_model_call
+from core.adapters import make_model_call
 from core.scheduler import ScheduleEntry, load_schedule_config, run_scheduler
 from core.state import create_initial_state
 from graphs.graph_types import load_graph
@@ -46,6 +46,9 @@ SCOPE_TYPE_MAP = {
 }
 
 DEFAULT_CONFIG = Path(__file__).parent.parent / "schedule_config.yaml"
+
+# Set by main() before scheduler starts; called by _dispatch_entry per run.
+_model_call_factory = lambda: make_model_call("stub")
 
 
 def _register_agents() -> None:
@@ -93,7 +96,7 @@ def _dispatch_entry(entry: ScheduleEntry) -> None:
         max_cost=entry.budget.get("max_cost", 5.0),
     )
 
-    model_call = make_stub_model_call()
+    model_call = _model_call_factory()
     result = execute_graph(graph, state, model_call=model_call, budget=budget)
 
     logger.info("Scheduled run '%s' completed: status=%s", entry.name, result.status)
@@ -112,6 +115,8 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Run the cron-based scheduler")
     parser.add_argument("--config", default=str(DEFAULT_CONFIG),
                         help="Path to schedule_config.yaml")
+    parser.add_argument("--model-call", default="stub",
+                        help="Model call mode: stub, ollama, ollama:<model>")
     parser.add_argument("--once", action="store_true",
                         help="Run one check cycle then exit")
     parser.add_argument("--interval", type=int, default=60,
@@ -125,6 +130,11 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     _register_agents()
+
+    global _model_call_factory
+    model_call_mode = args.model_call
+    _model_call_factory = lambda: make_model_call(model_call_mode)
+
     config = load_schedule_config(args.config)
 
     logger.info("Loaded %d schedule entries from %s", len(config.entries), args.config)

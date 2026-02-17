@@ -24,7 +24,7 @@ from agents.synthesizer_agent import SynthesizerAgent
 from agents.publisher_agent import PublisherAgent
 from core.budgets import BudgetLedger
 from core.orchestrator import execute_graph
-from core.routing import make_stub_model_call
+from core.adapters import make_model_call
 from core.state import create_initial_state
 from data.db import get_initialized_connection
 from data.dao_runs import insert_run, finish_run
@@ -52,6 +52,8 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Run the dossier graph")
     parser.add_argument("--topic_id", required=True, help="Topic ID to process")
     parser.add_argument("--db", default="ai_swarm.db", help="SQLite database path")
+    parser.add_argument("--model-call", default="stub",
+                        help="Model call mode: stub, ollama, ollama:<model>")
     parser.add_argument("-v", "--verbose", action="store_true")
     args = parser.parse_args(argv)
 
@@ -82,7 +84,7 @@ def main(argv: list[str] | None = None) -> int:
         },
     )
 
-    model_call = make_stub_model_call()
+    model_call = make_model_call(args.model_call)
     budget = BudgetLedger()
 
     logger.info("Starting dossier run %s for topic_id=%s", run_id, args.topic_id)
