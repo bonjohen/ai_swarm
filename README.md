@@ -14,8 +14,15 @@ python -m scripts.run_cert --cert_id aws-101
 python -m scripts.run_dossier --topic_id healthcare-ai
 python -m scripts.run_lab --suite_id bench-1
 
+# Cron scheduler (continuous or one-shot)
+python -m scripts.run_scheduler --config schedule_config.yaml
+python -m scripts.run_scheduler --once
+
+# Metrics dashboard
+python -m scripts.dashboard --port 8080
+
 # Run tests
-pytest                              # all 287 tests
+pytest                              # all 337 tests
 pytest tests/unit/                  # unit tests only
 pytest tests/integration/           # integration tests only
 pytest tests/unit/test_eval.py::TestScoring  # single class
@@ -40,13 +47,16 @@ state dict ──► Orchestrator ──► Node 1 ──► Node 2 ──► ..
 |-----------|----------|------|
 | Orchestrator | `core/orchestrator.py` | Executes YAML graphs, manages state, enforces budgets, checkpoints |
 | Agent Runtime | `agents/base_agent.py` | Base class + registry; agents produce `delta_state` merged into state |
-| Data Layer | `data/` | SQLite (22 tables) + filesystem; DAOs per domain object |
+| Data Layer | `data/` | SQLite (23 tables) + filesystem; DAOs per domain object |
 | QA Gate | `agents/qa_validator_agent.py` | Global + domain-specific validation rules |
 | Delta Engine | `agents/delta_agent.py` | Snapshot hashing + structured claim diffs |
 | Publisher | `agents/publisher_agent.py` + `publish/renderer.py` | JSON/Markdown/CSV artifacts to `publish/out/` |
 | Routing | `core/routing.py` | Local-first model selection with escalation criteria |
 | Budgets | `core/budgets.py` | Per-node/run token+cost caps, degradation, human review flags |
 | Observability | `core/logging.py` | Structured JSON logging, API key redaction, metrics collector |
+| Scheduler | `core/scheduler.py` | Cron-based loop execution with configurable schedules |
+| Notifications | `core/notifications.py` | Email (stub) + webhook hooks on run completion/failure |
+| Dashboard | `scripts/dashboard.py` | HTTP JSON endpoints for metrics and run history |
 
 ### Three Graph Loops
 
@@ -83,14 +93,14 @@ state dict ──► Orchestrator ──► Node 1 ──► Node 2 ──► ..
 
 ```
 agents/          12 agent modules + base class + registry
-core/            orchestrator, state, routing, budgets, errors, logging, policies
+core/            orchestrator, state, routing, budgets, errors, logging, scheduler, notifications
 connectors/      web_fetch, rss_fetch, file_loader
-data/            schema.sql + db.py + 6 DAO modules
+data/            schema.sql + db.py + 7 DAO modules (incl. telemetry)
 eval/            rubrics (6 built-in), lab_tasks, scoring engine
 graphs/          3 YAML graph definitions
 publish/         renderer (Markdown/CSV) + out/ (gitignored)
-scripts/         3 CLI entrypoints
-tests/           287 tests (unit + integration)
+scripts/         5 CLI entrypoints (cert, dossier, lab, scheduler, dashboard)
+tests/           337 tests (unit + integration)
 ```
 
 ## Configuration

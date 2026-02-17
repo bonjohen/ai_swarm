@@ -18,15 +18,43 @@ def insert_source_doc(
     title: str | None = None,
     content_hash: str | None = None,
     text_path: str | None = None,
+    license_flag: str = "open",
     meta: dict[str, Any] | None = None,
 ) -> None:
     conn.execute(
         """INSERT INTO source_docs
-           (doc_id, uri, source_type, retrieved_at, published_at, title, content_hash, text_path, meta_json)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-        (doc_id, uri, source_type, retrieved_at, published_at, title, content_hash, text_path, json.dumps(meta or {})),
+           (doc_id, uri, source_type, retrieved_at, published_at, title, content_hash, text_path, license_flag, meta_json)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (doc_id, uri, source_type, retrieved_at, published_at, title, content_hash,
+         text_path, license_flag, json.dumps(meta or {})),
     )
     conn.commit()
+
+
+def update_license_flag(
+    conn: sqlite3.Connection,
+    doc_id: str,
+    license_flag: str,
+) -> None:
+    """Update the license flag for a source document.
+
+    Valid flags: 'open', 'restricted', 'no_republish'
+    """
+    if license_flag not in ("open", "restricted", "no_republish"):
+        raise ValueError(f"Invalid license_flag: {license_flag!r}")
+    conn.execute(
+        "UPDATE source_docs SET license_flag = ? WHERE doc_id = ?",
+        (license_flag, doc_id),
+    )
+    conn.commit()
+
+
+def get_restricted_doc_ids(conn: sqlite3.Connection) -> set[str]:
+    """Return doc_ids that have a restrictive license flag."""
+    rows = conn.execute(
+        "SELECT doc_id FROM source_docs WHERE license_flag IN ('restricted', 'no_republish')"
+    ).fetchall()
+    return {row["doc_id"] for row in rows}
 
 
 def get_source_doc(conn: sqlite3.Connection, doc_id: str) -> dict[str, Any] | None:

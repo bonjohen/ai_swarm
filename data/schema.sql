@@ -13,6 +13,7 @@ CREATE TABLE IF NOT EXISTS source_docs (
     title       TEXT,
     content_hash TEXT,
     text_path   TEXT,
+    license_flag TEXT DEFAULT 'open',
     meta_json   TEXT DEFAULT '{}'
 );
 
@@ -203,6 +204,22 @@ CREATE TABLE IF NOT EXISTS lab_results (
 );
 
 -- ============================================================
+-- Learner telemetry tables
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS learner_events (
+    event_id     TEXT PRIMARY KEY,
+    cert_id      TEXT NOT NULL,
+    learner_id   TEXT NOT NULL,
+    event_type   TEXT NOT NULL,
+    objective_id TEXT,
+    question_id  TEXT,
+    score        REAL,
+    t            TEXT NOT NULL,
+    meta_json    TEXT DEFAULT '{}'
+);
+
+-- ============================================================
 -- Indexes
 -- ============================================================
 
@@ -219,3 +236,5 @@ CREATE INDEX IF NOT EXISTS idx_cert_modules_obj ON cert_modules(objective_id);
 CREATE INDEX IF NOT EXISTS idx_cert_questions_obj ON cert_questions(objective_id);
 CREATE INDEX IF NOT EXISTS idx_lab_runs_suite ON lab_runs(suite_id);
 CREATE INDEX IF NOT EXISTS idx_lab_results_run ON lab_results(lab_run_id);
+CREATE INDEX IF NOT EXISTS idx_learner_events_cert ON learner_events(cert_id);
+CREATE INDEX IF NOT EXISTS idx_learner_events_learner ON learner_events(cert_id, learner_id);

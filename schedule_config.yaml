@@ -1,0 +1,40 @@
+# AI Swarm Scheduler Configuration
+# Each entry triggers a graph run at the specified cron schedule.
+
+defaults:
+  notify:
+    - webhook
+  budget:
+    max_tokens: 50000
+    max_cost: 5.00
+
+schedules:
+  - name: weekly-aws-cert
+    graph: certification
+    scope_id: aws-101
+    cron: weekly
+    enabled: true
+    notify:
+      - webhook
+      - email
+
+  - name: weekly-azure-cert
+    graph: certification
+    scope_id: azure-201
+    cron: weekly
+    enabled: true
+
+  - name: daily-healthcare-dossier
+    graph: dossier
+    scope_id: healthcare-ai
+    cron: daily
+    enabled: true
+
+  - name: monthly-bench-lab
+    graph: lab
+    scope_id: bench-1
+    cron: monthly
+    enabled: true
+    budget:
+      max_tokens: 100000
+      max_cost: 10.00

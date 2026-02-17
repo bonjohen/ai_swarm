@@ -103,6 +103,20 @@ class PublisherAgent(BaseAgent):
         delta_id = state.get("delta_id", "unknown")
         now = datetime.now(timezone.utc).isoformat()
 
+        # Check license flags — filter out restricted content from verbatim republish
+        restricted_docs = set(state.get("_restricted_doc_ids", []))
+        if restricted_docs:
+            claims = state.get("claims", [])
+            for claim in claims:
+                citations = claim.get("citations_json", claim.get("citations", []))
+                if isinstance(citations, str):
+                    citations = json.loads(citations)
+                for cit in citations:
+                    doc_id = cit.get("doc_id", "")
+                    if doc_id in restricted_docs:
+                        claim["_license_restricted"] = True
+                        break
+
         # Determine version label
         version = state.get("version") or auto_version(scope_type, state)
         publish_dir = PUBLISH_ROOT / scope_type / scope_id / version

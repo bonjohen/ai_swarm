@@ -77,6 +77,14 @@ def get_events_for_run(conn: sqlite3.Connection, run_id: str) -> list[dict[str, 
     return [_event_row(r) for r in rows]
 
 
+def list_runs(conn: sqlite3.Connection, limit: int = 50) -> list[dict[str, Any]]:
+    """List recent runs, newest first."""
+    rows = conn.execute(
+        "SELECT * FROM runs ORDER BY started_at DESC LIMIT ?", (limit,)
+    ).fetchall()
+    return [_run_row(r) for r in rows]
+
+
 def _run_row(row: sqlite3.Row) -> dict[str, Any]:
     d = dict(row)
     for key in ("cost_json", "meta_json"):

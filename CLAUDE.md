@@ -19,6 +19,13 @@ python -m scripts.run_cert --cert_id <id>
 python -m scripts.run_dossier --topic_id <id>
 python -m scripts.run_lab --suite_id <id>
 
+# Run the cron scheduler
+python -m scripts.run_scheduler --config schedule_config.yaml --once
+python -m scripts.run_scheduler              # continuous mode (check every 60s)
+
+# Metrics dashboard
+python -m scripts.dashboard --port 8080
+
 # Tests
 pytest
 pytest tests/unit/
@@ -60,6 +67,18 @@ Tracked per token in/out, wall time, and dollar cost. Enforced at per-node, per-
 ### Observability (`core/logging.py`)
 
 Structured JSON logging with redaction of API keys/tokens. `MetricsCollector` tracks run duration, token usage, frontier usage rate, QA fail rate per agent, delta magnitude. `log_node_event()` emits structured records for each node execution.
+
+### Scheduler (`core/scheduler.py`)
+
+Cron-based loop execution. `ScheduleEntry` defines graph + scope + cron expression. Supports shortcuts (daily, weekly, monthly, hourly) and standard 5-field cron. `run_scheduler()` runs a continuous check loop dispatching to `dispatch_fn`. Config loaded from `schedule_config.yaml`.
+
+### Notifications (`core/notifications.py`)
+
+`NotificationHook` protocol with `WebhookHook` (HTTP POST), `EmailHook` (SMTP stub), and `LogHook`. Hook registry for named hooks. `dispatch_notifications()` sends through all provided hooks.
+
+### License Flags
+
+`source_docs.license_flag` column: `open` (default), `restricted`, `no_republish`. Publisher checks `_restricted_doc_ids` in state and marks claims citing restricted sources with `_license_restricted` flag.
 
 ### Run Execution Flow
 

@@ -365,14 +365,14 @@ Improvements for robustness, observability, and automation.
 
 ### 4.6 Scheduler and Notifications (v1)
 
-- [ ] Cron scheduler to run weekly/monthly loops automatically
-- [ ] Notification hooks (email/webhook) on run completion or failure
-- [ ] Simple web-based metrics dashboards
+- [X] Cron scheduler to run weekly/monthly loops automatically (`core/scheduler.py`, `scripts/run_scheduler.py`, `schedule_config.yaml`)
+- [X] Notification hooks (email/webhook) on run completion or failure (`core/notifications.py`)
+- [X] Simple web-based metrics dashboards (`scripts/dashboard.py`)
 
 ### 4.7 Additional v1 Features
 
-- [ ] Learner telemetry ingestion (for certification loop, when learners exist)
-- [ ] License flags on SourceDoc to prevent re-publishing restricted content verbatim
+- [X] Learner telemetry ingestion (`data/dao_telemetry.py`, `learner_events` table in schema)
+- [X] License flags on SourceDoc (`license_flag` column, `update_license_flag()`, `get_restricted_doc_ids()`, publisher checks)
 
 ---
 
