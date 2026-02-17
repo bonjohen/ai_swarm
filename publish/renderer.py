@@ -402,6 +402,88 @@ def render_story_markdown(state: dict[str, Any]) -> str:
     return "".join(parts)
 
 
+def render_recap_markdown(state: dict[str, Any]) -> str:
+    """Render a 'Previously on...' recap as standalone Markdown."""
+    parts: list[str] = []
+    episode_title = state.get("episode_title", "Untitled Episode")
+    recap = state.get("recap", "")
+
+    parts.append(_md_h1(f"Previously On: {episode_title}"))
+    if recap:
+        parts.append(f"{recap}\n\n")
+    else:
+        parts.append("*No previous episode recap available.*\n\n")
+
+    return "".join(parts)
+
+
+def render_world_state_json(state: dict[str, Any]) -> dict[str, Any]:
+    """Build a world state snapshot for publishing."""
+    characters = state.get("characters", [])
+    # Strip DB connection and other non-serializable items from characters
+    clean_chars = []
+    for c in characters:
+        clean_chars.append({
+            "character_id": c.get("character_id", ""),
+            "name": c.get("name", ""),
+            "role": c.get("role", ""),
+            "arc_stage": c.get("arc_stage", ""),
+            "alive": c.get("alive", True),
+            "traits": c.get("traits_json", c.get("traits", [])),
+            "goals": c.get("goals_json", c.get("goals", [])),
+            "fears": c.get("fears_json", c.get("fears", [])),
+            "beliefs": c.get("beliefs_json", c.get("beliefs", [])),
+        })
+
+    active_threads = state.get("active_threads", [])
+    clean_threads = []
+    for t in active_threads:
+        clean_threads.append({
+            "thread_id": t.get("thread_id", ""),
+            "title": t.get("title", ""),
+            "status": t.get("status", ""),
+            "thematic_tag": t.get("thematic_tag", ""),
+            "introduced_in_episode": t.get("introduced_in_episode"),
+        })
+
+    new_claims = state.get("new_claims", [])
+    claim_summary = []
+    for cl in new_claims:
+        claim_summary.append({
+            "claim_id": cl.get("claim_id", ""),
+            "claim_type": cl.get("claim_type", ""),
+            "statement": cl.get("statement", ""),
+        })
+
+    world_state = state.get("world_state", {})
+    return {
+        "world_id": state.get("scope_id", state.get("world_id", "")),
+        "name": world_state.get("name", ""),
+        "genre": world_state.get("genre", ""),
+        "tone": world_state.get("tone", ""),
+        "episode_number": state.get("episode_number", 0),
+        "characters": clean_chars,
+        "active_threads": clean_threads,
+        "claim_summary": claim_summary,
+    }
+
+
+def render_episode_json(state: dict[str, Any]) -> dict[str, Any]:
+    """Build a structured episode JSON for publishing."""
+    return {
+        "episode_title": state.get("episode_title", ""),
+        "episode_number": state.get("episode_number", 0),
+        "world_id": state.get("scope_id", state.get("world_id", "")),
+        "premise": state.get("premise", ""),
+        "act_structure": state.get("act_structure", []),
+        "scenes": state.get("scenes", []),
+        "episode_text": state.get("episode_text", ""),
+        "word_count": len(state.get("episode_text", "").split()) if state.get("episode_text") else 0,
+        "selected_threads": state.get("selected_threads", []),
+        "compliance_status": state.get("compliance_status", ""),
+    }
+
+
 def render_markdown(scope_type: str, state: dict[str, Any]) -> str:
     """Dispatch to the appropriate renderer based on scope_type."""
     if scope_type == "cert":
@@ -463,5 +545,65 @@ def render_exports(scope_type: str, state: dict[str, Any], publish_dir: Path) ->
                 "hash": csv_hash,
                 "format": "csv",
             })
+
+    # Story-specific exports
+    if scope_type == "story":
+        # episode.md — episode markdown (same as report.md but named per spec)
+        ep_md = render_story_markdown(state)
+        ep_md_path = publish_dir / "episode.md"
+        ep_md_hash = _write_artifact(ep_md_path, ep_md)
+        artifacts.append({
+            "name": "episode.md",
+            "path": str(ep_md_path),
+            "hash": ep_md_hash,
+            "format": "markdown",
+        })
+
+        # episode.json — structured episode data
+        ep_json = render_episode_json(state)
+        ep_json_content = json.dumps(ep_json, indent=2, default=str)
+        ep_json_path = publish_dir / "episode.json"
+        ep_json_hash = _write_artifact(ep_json_path, ep_json_content)
+        artifacts.append({
+            "name": "episode.json",
+            "path": str(ep_json_path),
+            "hash": ep_json_hash,
+            "format": "json",
+        })
+
+        # narration_script.txt — plain text narration
+        narration = state.get("narration_script", "")
+        if narration:
+            narr_path = publish_dir / "narration_script.txt"
+            narr_hash = _write_artifact(narr_path, narration)
+            artifacts.append({
+                "name": "narration_script.txt",
+                "path": str(narr_path),
+                "hash": narr_hash,
+                "format": "text",
+            })
+
+        # recap.md — "Previously on..." standalone markdown
+        recap_md = render_recap_markdown(state)
+        recap_path = publish_dir / "recap.md"
+        recap_hash = _write_artifact(recap_path, recap_md)
+        artifacts.append({
+            "name": "recap.md",
+            "path": str(recap_path),
+            "hash": recap_hash,
+            "format": "markdown",
+        })
+
+        # world_state.json — current world snapshot
+        ws_json = render_world_state_json(state)
+        ws_content = json.dumps(ws_json, indent=2, default=str)
+        ws_path = publish_dir / "world_state.json"
+        ws_hash = _write_artifact(ws_path, ws_content)
+        artifacts.append({
+            "name": "world_state.json",
+            "path": str(ws_path),
+            "hash": ws_hash,
+            "format": "json",
+        })
 
     return artifacts
