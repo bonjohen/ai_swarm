@@ -1,0 +1,15 @@
+paths:
+  base: automation
+  tasks: automation/tasks
+  processing: automation/processing
+  outputs: automation/outputs
+  archive: automation/archive
+  logs: automation/logs
+  schemas: automation/schemas
+
+validation:
+  require_meta: true
+  require_success_criteria: true
+
+watcher:
+  interval_seconds: 5
