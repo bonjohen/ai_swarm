@@ -1,0 +1,8 @@
+{
+  "sources": [
+    {"uri": "http://src1.example.com/ai-healthcare-growth", "source_type": "web"},
+    {"uri": "http://src2.example.com/ai-spending-report", "source_type": "web"},
+    {"uri": "http://src3.example.com/alternative-study", "source_type": "web"}
+  ],
+  "existing_claims": []
+}

@@ -6,6 +6,7 @@ Usage: python -m scripts.run_dossier --topic_id <id> [--db <path>]
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import sys
 import uuid
@@ -52,6 +53,8 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Run the dossier graph")
     parser.add_argument("--topic_id", required=True, help="Topic ID to process")
     parser.add_argument("--db", default="ai_swarm.db", help="SQLite database path")
+    parser.add_argument("--sources", default=None,
+                        help="Path to a JSON file with seed data (sources, etc.)")
     parser.add_argument("--model-call", default="stub",
                         help="Model call mode: stub, ollama, ollama:<model>")
     parser.add_argument("-v", "--verbose", action="store_true")
@@ -74,13 +77,19 @@ def main(argv: list[str] | None = None) -> int:
 
     prev_snapshot = get_latest_snapshot(conn, "topic", args.topic_id)
 
+    # Load seed data from JSON file if provided
+    seed = {}
+    if args.sources:
+        with open(args.sources) as f:
+            seed = json.load(f)
+
     state = create_initial_state(
         scope_type="topic", scope_id=args.topic_id,
         run_id=run_id, graph_id="dossier_graph",
         extra={
-            "sources": [],
+            "sources": seed.get("sources", []),
             "previous_snapshot": prev_snapshot,
-            "existing_claims": [],
+            "existing_claims": seed.get("existing_claims", []),
         },
     )
 

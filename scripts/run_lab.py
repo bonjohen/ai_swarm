@@ -6,6 +6,7 @@ Usage: python -m scripts.run_lab --suite_id <id> [--db <path>]
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import sys
 import uuid
@@ -44,6 +45,8 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Run the lab benchmark graph")
     parser.add_argument("--suite_id", required=True, help="Suite ID to benchmark")
     parser.add_argument("--db", default="ai_swarm.db", help="SQLite database path")
+    parser.add_argument("--sources", default=None,
+                        help="Path to a JSON file with seed data (suite_config, tasks, models, etc.)")
     parser.add_argument("--model-call", default="stub",
                         help="Model call mode: stub, ollama, ollama:<model>")
     parser.add_argument("-v", "--verbose", action="store_true")
@@ -66,14 +69,24 @@ def main(argv: list[str] | None = None) -> int:
 
     prev_snapshot = get_latest_snapshot(conn, "lab", args.suite_id)
 
+    # Load seed data from JSON file if provided
+    seed = {}
+    if args.sources:
+        with open(args.sources) as f:
+            seed = json.load(f)
+
     state = create_initial_state(
         scope_type="lab", scope_id=args.suite_id,
         run_id=run_id, graph_id="lab_graph",
         extra={
-            "suite_config": {},
+            "suite_config": seed.get("suite_config", {}),
             "previous_snapshot": prev_snapshot,
-            "claims": [],
-            "metrics": [],
+            "claims": seed.get("claims", []),
+            "metrics": seed.get("metrics", []),
+            "tasks": seed.get("tasks", []),
+            "models": seed.get("models", []),
+            "hw_spec": seed.get("hw_spec", {}),
+            "normalized_segments": seed.get("normalized_segments", []),
         },
     )
 
