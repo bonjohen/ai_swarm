@@ -32,9 +32,12 @@ from core.adapters import make_model_call
 from data.db import get_initialized_connection
 from data.dao_runs import insert_run, finish_run
 from data.dao_story_worlds import insert_world, get_world, increment_episode_number
-from data.dao_characters import insert_character
-from data.dao_threads import insert_thread
+from data.dao_characters import insert_character, update_character, update_arc_stage
+from data.dao_threads import insert_thread, resolve_thread
+from data.dao_claims import insert_claim
+from data.dao_entities import insert_entity
 from data.dao_episodes import insert_episode
+from data.dao_snapshots import insert_snapshot
 from graphs.graph_types import load_graph
 
 logger = logging.getLogger(__name__)
@@ -108,6 +111,114 @@ def _seed_world(conn, seed: dict) -> str:
     return world_id
 
 
+def _persist_world_state(conn, world_id: str, episode_number: int, state: dict, now: str) -> None:
+    """Write canon changes back to DB after a successful graph run.
+
+    Persists: claims, character updates, new/resolved threads, entities,
+    snapshot, episode record, and increments the world episode counter.
+    """
+    # 1. Write new claims
+    for claim in state.get("new_claims", []):
+        insert_claim(
+            conn,
+            claim_id=claim["claim_id"],
+            scope_type="story",
+            scope_id=world_id,
+            statement=claim["statement"],
+            claim_type=claim["claim_type"],
+            entities=claim.get("entities"),
+            citations=claim.get("citations"),
+            evidence_strength=claim.get("evidence_strength"),
+            confidence=claim.get("confidence"),
+            status="active",
+            first_seen_at=now,
+        )
+
+    # 2. Update characters (beliefs, goals, traits, arc_stage)
+    for update in state.get("updated_characters", []):
+        cid = update.get("character_id")
+        if not cid:
+            continue
+        changes = update.get("changes", {})
+        # Separate arc_stage (requires sequential enforcement) from other fields
+        arc_stage = changes.pop("arc_stage", None)
+        if changes:
+            update_character(conn, cid, **changes)
+        if arc_stage:
+            try:
+                update_arc_stage(conn, cid, arc_stage)
+            except ValueError as e:
+                logger.warning("Skipping arc_stage update for %s: %s", cid, e)
+
+    # 3. Insert new threads
+    for thread in state.get("new_threads", []):
+        tid = thread.get("thread_id", str(uuid.uuid4()))
+        insert_thread(
+            conn,
+            thread_id=tid,
+            world_id=world_id,
+            title=thread.get("title", "Untitled Thread"),
+            introduced_in_episode=episode_number,
+            thematic_tag=thread.get("thematic_tag", ""),
+            related_character_ids=thread.get("related_character_ids"),
+        )
+
+    # 4. Resolve threads
+    for tid in state.get("resolved_threads", []):
+        resolve_thread(conn, tid, resolved_in_episode=episode_number)
+
+    # 5. Insert new entities
+    for entity in state.get("new_entities", []):
+        insert_entity(
+            conn,
+            entity_id=entity["entity_id"],
+            type=entity.get("type", "unknown"),
+            names=[entity["name"]] if entity.get("name") else None,
+            props={k: v for k, v in entity.items() if k not in ("entity_id", "type", "name")},
+        )
+
+    # 6. Insert snapshot record (so next episode can find it)
+    snapshot_id = state.get("snapshot_id")
+    if snapshot_id:
+        insert_snapshot(
+            conn,
+            snapshot_id=snapshot_id,
+            scope_type="story",
+            scope_id=world_id,
+            created_at=now,
+            hash=state.get("snapshot_hash", ""),
+            included_claim_ids=[c["claim_id"] for c in state.get("new_claims", [])],
+        )
+
+    # 7. Insert episode record
+    episode_id = f"{world_id}-E{episode_number:03d}"
+    insert_episode(
+        conn,
+        episode_id=episode_id,
+        world_id=world_id,
+        episode_number=episode_number,
+        title=state.get("episode_title", ""),
+        act_structure=state.get("act_structure"),
+        scene_count=len(state.get("scenes", [])),
+        word_count=len(state.get("episode_text", "").split()),
+        snapshot_id=snapshot_id,
+        run_id=state.get("run_id", ""),
+        status="final",
+        created_at=now,
+    )
+
+    # 8. Increment world episode counter
+    increment_episode_number(conn, world_id)
+
+    logger.info("Persisted world state: %d claims, %d character updates, "
+                "%d new threads, %d resolved threads, %d entities",
+                len(state.get("new_claims", [])),
+                len(state.get("updated_characters", [])),
+                len(state.get("new_threads", [])),
+                len(state.get("resolved_threads", [])),
+                len(state.get("new_entities", [])))
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Run the story graph")
     parser.add_argument("--world_id", required=True, help="World ID to process")
@@ -116,6 +227,8 @@ def main(argv: list[str] | None = None) -> int:
                         help="Path to a JSON file with seed data (world, characters, threads)")
     parser.add_argument("--model-call", default="stub",
                         help="Model call mode: stub, ollama, ollama:<model>")
+    parser.add_argument("--frontier-model", default=None,
+                        help="Frontier model for escalation on retry (e.g., ollama:llama3:70b)")
     parser.add_argument("-v", "--verbose", action="store_true")
     args = parser.parse_args(argv)
 
@@ -156,35 +269,23 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     model_call = make_model_call(args.model_call)
-    budget = BudgetLedger()
+    frontier_model_call = make_model_call(args.frontier_model) if args.frontier_model else None
+    budget = BudgetLedger(max_tokens=32768)
 
     logger.info("Starting story run %s for world_id=%s", run_id, args.world_id)
-    result = execute_graph(graph, state, model_call=model_call, budget=budget)
+    result = execute_graph(
+        graph, state, model_call=model_call,
+        frontier_model_call=frontier_model_call, budget=budget,
+    )
 
     end_time = datetime.now(timezone.utc).isoformat()
     finish_run(conn, run_id, ended_at=end_time, status=result.status, cost=budget.to_dict())
 
     if result.status == "completed":
-        # Post-run: insert episode record and increment world episode number
         episode_number = result.state.get("episode_number", 1)
-        episode_id = f"{args.world_id}-E{episode_number:03d}"
-        insert_episode(
-            conn,
-            episode_id=episode_id,
-            world_id=args.world_id,
-            episode_number=episode_number,
-            title=result.state.get("episode_title", ""),
-            act_structure=result.state.get("act_structure"),
-            scene_count=len(result.state.get("scenes", [])),
-            word_count=len(result.state.get("episode_text", "").split()),
-            snapshot_id=result.state.get("snapshot_id"),
-            run_id=run_id,
-            status="final",
-            created_at=now,
-        )
-        increment_episode_number(conn, args.world_id)
-        logger.info("Run %s completed. Episode %s published to: %s",
-                     run_id, episode_id, result.state.get("publish_dir", "N/A"))
+        _persist_world_state(conn, args.world_id, episode_number, result.state, now)
+        logger.info("Run %s completed. Episode E%03d published to: %s",
+                     run_id, episode_number, result.state.get("publish_dir", "N/A"))
     else:
         for event in result.events:
             if event.get("status") == "failed":

@@ -80,6 +80,7 @@ def execute_graph(
     state: dict[str, Any],
     *,
     model_call: Any = None,
+    frontier_model_call: Any = None,
     budget: BudgetLedger | None = None,
     on_event: Any = None,
     checkpoint: bool = False,
@@ -91,6 +92,9 @@ def execute_graph(
         graph: The graph definition to execute.
         state: Initial run state dict (must contain required keys).
         model_call: callable(system_prompt, user_message) -> str
+        frontier_model_call: Optional frontier model for escalation on retry.
+            When a node is re-executed via on_fail routing and the agent allows
+            frontier models, this callable is used instead of model_call.
         budget: Optional BudgetLedger for cost tracking/enforcement.
         on_event: Optional callable(event_dict) for observability.
         checkpoint: If True, save state after each successful node.
@@ -145,6 +149,7 @@ def execute_graph(
             graph=graph,
             state=state,
             model_call=model_call,
+            frontier_model_call=frontier_model_call,
             budget=budget,
             run_id=run_id,
         )
@@ -175,6 +180,9 @@ def execute_graph(
         elif event["status"] == "failed":
             if node.on_fail:
                 logger.warning("Node '%s' failed, routing to on_fail '%s'", node.name, node.on_fail)
+                # Track escalation: mark the on_fail target for frontier escalation
+                escalated = state.setdefault("_escalated_nodes", set())
+                escalated.add(node.on_fail)
                 current_node_name = node.on_fail
             else:
                 logger.error("Node '%s' failed with no on_fail, aborting graph", node.name)
@@ -201,6 +209,7 @@ def _execute_node(
     graph: Graph,
     state: dict[str, Any],
     model_call: Any,
+    frontier_model_call: Any = None,
     budget: BudgetLedger,
     run_id: str,
 ) -> dict[str, Any]:
@@ -210,6 +219,19 @@ def _execute_node(
     """
     agent: BaseAgent = get_agent(node.agent)
     attempts = max(node.retry.max_attempts, 1)
+
+    # Frontier escalation: use frontier model if this node was routed to via on_fail
+    # and the agent allows frontier models and a frontier callable is available
+    escalated_nodes = state.get("_escalated_nodes", set())
+    use_frontier = (
+        frontier_model_call is not None
+        and node.name in escalated_nodes
+        and getattr(agent, "POLICY", None)
+        and agent.POLICY.allowed_frontier_models
+    )
+    effective_model_call = frontier_model_call if use_frontier else model_call
+    if use_frontier:
+        logger.info("Escalating node '%s' to frontier model", node.name)
 
     for attempt in range(1, attempts + 1):
         event_id = str(uuid.uuid4())
@@ -224,16 +246,24 @@ def _execute_node(
             # 2. Check budget (with per-node caps if defined)
             budget.check(node.budget)
 
-            # 3. Execute agent
-            delta_state = agent.run(state, model_call=model_call)
+            # 3. Execute agent (use frontier model if escalated)
+            delta_state = agent.run(state, model_call=effective_model_call)
 
             # 4. Output schema validation is done inside agent.run() via validate()
 
             # 5. Merge delta_state into state
             merge_delta(state, delta_state)
 
+            # 5b. Check for QA gate failure — qa_validator returns FAIL as data,
+            # not as an exception. If on_fail is defined, raise so the fail path
+            # routes to the recovery node.
+            if (delta_state.get("gate_status") == "FAIL" and node.on_fail):
+                raise ValueError(
+                    f"QA gate FAIL: {len(delta_state.get('violations', []))} violation(s)"
+                )
+
             # 6. Emit success event
-            return {
+            evt = {
                 "event_id": event_id,
                 "run_id": run_id,
                 "t": started,
@@ -243,6 +273,9 @@ def _execute_node(
                 "attempt": attempt,
                 "cost": budget.to_dict(),
             }
+            if use_frontier:
+                evt["escalated"] = True
+            return evt
 
         except BudgetExceededError as exc:
             logger.warning("Node '%s' budget exceeded: %s", node.name, exc)

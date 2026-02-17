@@ -33,6 +33,7 @@ class Graph:
     id: str
     entry: str
     nodes: dict[str, GraphNode]
+    budget: dict[str, Any] | None = None
 
     def get_node(self, name: str) -> GraphNode:
         if name not in self.nodes:
@@ -68,4 +69,4 @@ def load_graph(path: Path | str) -> Graph:
             end=node_def.get("end", False),
         )
 
-    return Graph(id=graph_id, entry=entry, nodes=nodes)
+    return Graph(id=graph_id, entry=entry, nodes=nodes, budget=raw.get("budget"))

@@ -217,7 +217,7 @@ Robustness improvements specific to the story system.
 
 ### S4.1 World State Persistence
 
-- [ ] After successful graph run in `run_story.py`:
+- [x] After successful graph run in `run_story.py`:
   - Write new claims to DB via `dao_claims`
   - Update characters in DB via `dao_characters` (arc_stage, beliefs, goals from `updated_characters`)
   - Insert/resolve threads in DB via `dao_threads` (from `new_threads`, `resolved_threads`)
@@ -227,13 +227,13 @@ Robustness improvements specific to the story system.
 
 ### S4.2 Frontier Escalation for Scene Writing
 
-- [ ] Configure scene_writer POLICY for frontier escalation:
+- [x] Configure scene_writer POLICY for frontier escalation:
   - Escalate when: audience compliance fails on retry, or QA gate fails on scene_writing retry
   - Log escalation decision to run_events
 
 ### S4.3 Budget Enforcement
 
-- [ ] Set story-specific budget defaults in graph YAML:
+- [x] Set story-specific budget defaults in graph YAML:
   - Per-node caps: scene_writer 8192 tokens, narration_formatter 8192 tokens, other agents 4096
   - Per-run cap: 32768 tokens total
   - Degradation: reduce scene count, simplify prose, skip narration formatting
@@ -247,11 +247,11 @@ Robustness improvements specific to the story system.
 
 ### S4.5 Phase S4 Tests
 
-- [ ] Test world state persistence: run graph, verify DB state, run again, verify continuity
-- [ ] Test frontier escalation trigger on scene_writer retry
-- [ ] Test budget degradation: scene count reduced when budget exceeded
+- [x] Test world state persistence: run graph, verify DB state, run again, verify continuity
+- [x] Test frontier escalation trigger on scene_writer retry
+- [x] Test budget degradation: scene count reduced when budget exceeded
 - [x] Test arc_stage transition validation (valid and invalid)
-- [ ] Test full 3-episode sequence with Ollama: world state compounds correctly
+- [~] Test full 3-episode sequence with Ollama: world state compounds correctly (requires live Ollama; covered by 2-episode mock test)
 
 ---
 
