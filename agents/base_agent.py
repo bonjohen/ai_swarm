@@ -50,6 +50,9 @@ class AgentPolicy(BaseModel):
     max_tokens: int = 4096
     confidence_threshold: float = 0.7
     required_citations: bool = False
+    preferred_tier: int = 2
+    min_tier: int = 1
+    max_tokens_by_tier: dict[int, int] = {}
 
 
 class BaseAgent(ABC):

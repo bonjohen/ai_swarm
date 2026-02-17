@@ -33,7 +33,7 @@ class DeltaAgent(BaseAgent):
     USER_TEMPLATE = "{_delta_bypass}"
     INPUT_SCHEMA = DeltaInput
     OUTPUT_SCHEMA = DeltaOutput
-    POLICY = AgentPolicy(allowed_local_models=["local"], max_tokens=2048)
+    POLICY = AgentPolicy(allowed_local_models=["local"], max_tokens=2048, preferred_tier=0)
 
     def run(self, state: dict[str, Any], model_call: Any = None) -> dict[str, Any]:
         """Snapshot + delta is deterministic — no LLM call needed."""

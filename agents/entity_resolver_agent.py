@@ -41,6 +41,7 @@ class EntityResolverAgent(BaseAgent):
         allowed_frontier_models=["frontier"],
         max_tokens=4096,
         confidence_threshold=0.7,
+        preferred_tier=1,
     )
 
     def parse(self, response: str) -> dict[str, Any]:

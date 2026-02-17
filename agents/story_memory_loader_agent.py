@@ -37,7 +37,7 @@ class StoryMemoryLoaderAgent(BaseAgent):
     USER_TEMPLATE = "{_memory_loader_bypass}"
     INPUT_SCHEMA = StoryMemoryLoaderInput
     OUTPUT_SCHEMA = StoryMemoryLoaderOutput
-    POLICY = AgentPolicy(allowed_local_models=["local"], max_tokens=2048)
+    POLICY = AgentPolicy(allowed_local_models=["local"], max_tokens=2048, preferred_tier=0)
 
     def run(self, state: dict[str, Any], model_call: Any = None) -> dict[str, Any]:
         """Deterministic — loads world state from DB, no LLM call."""

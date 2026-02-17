@@ -212,3 +212,37 @@ def make_stub_model_call() -> ModelCallable:
             "No model adapter configured. Provide a real model_call or use a test mock."
         )
     return _stub
+
+
+# --- Composite routing score ---
+
+# Default weights: complexity, inverse-confidence, hallucination risk
+DEFAULT_ROUTING_WEIGHTS: tuple[float, float, float] = (0.4, 0.3, 0.3)
+DEFAULT_ROUTING_THRESHOLD: float = 0.5
+
+
+def compute_routing_score(
+    complexity_score: float,
+    confidence: float,
+    hallucination_risk: float = 0.0,
+    *,
+    weights: tuple[float, float, float] | None = None,
+) -> float:
+    """Compute a composite routing score for tier escalation.
+
+    Higher score = more likely to escalate to a higher tier.
+
+    Formula:
+        score = (complexity * w1) + ((1 - confidence) * w2) + (hallucination_risk * w3)
+
+    Args:
+        complexity_score: 0.0–1.0, how complex the request is.
+        confidence: 0.0–1.0, classification confidence (inverted for score).
+        hallucination_risk: 0.0–1.0, estimated hallucination risk.
+        weights: (w1, w2, w3) tuple; defaults to (0.4, 0.3, 0.3).
+
+    Returns:
+        Composite score in [0.0, 1.0].
+    """
+    w1, w2, w3 = weights or DEFAULT_ROUTING_WEIGHTS
+    return (complexity_score * w1) + ((1.0 - confidence) * w2) + (hallucination_risk * w3)

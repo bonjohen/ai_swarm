@@ -21,6 +21,7 @@ from core.errors import (
     ModelAPIError,
     NodeError,
 )
+from core.routing import ModelRouter
 from core.state import merge_delta, validate_state
 from graphs.graph_types import Graph, GraphNode
 
@@ -81,6 +82,7 @@ def execute_graph(
     *,
     model_call: Any = None,
     frontier_model_call: Any = None,
+    router: ModelRouter | None = None,
     budget: BudgetLedger | None = None,
     on_event: Any = None,
     checkpoint: bool = False,
@@ -95,6 +97,10 @@ def execute_graph(
         frontier_model_call: Optional frontier model for escalation on retry.
             When a node is re-executed via on_fail routing and the agent allows
             frontier models, this callable is used instead of model_call.
+        router: Optional ModelRouter for per-node model selection.
+            When provided, overrides model_call with router-selected callable.
+            Backward compatible: if model_call is provided and no router,
+            uses model_call directly (existing behavior).
         budget: Optional BudgetLedger for cost tracking/enforcement.
         on_event: Optional callable(event_dict) for observability.
         checkpoint: If True, save state after each successful node.
@@ -150,6 +156,7 @@ def execute_graph(
             state=state,
             model_call=model_call,
             frontier_model_call=frontier_model_call,
+            router=router,
             budget=budget,
             run_id=run_id,
         )
@@ -210,6 +217,7 @@ def _execute_node(
     state: dict[str, Any],
     model_call: Any,
     frontier_model_call: Any = None,
+    router: ModelRouter | None = None,
     budget: BudgetLedger,
     run_id: str,
 ) -> dict[str, Any]:
@@ -220,18 +228,31 @@ def _execute_node(
     agent: BaseAgent = get_agent(node.agent)
     attempts = max(node.retry.max_attempts, 1)
 
-    # Frontier escalation: use frontier model if this node was routed to via on_fail
-    # and the agent allows frontier models and a frontier callable is available
-    escalated_nodes = state.get("_escalated_nodes", set())
-    use_frontier = (
-        frontier_model_call is not None
-        and node.name in escalated_nodes
-        and getattr(agent, "POLICY", None)
-        and agent.POLICY.allowed_frontier_models
-    )
-    effective_model_call = frontier_model_call if use_frontier else model_call
-    if use_frontier:
-        logger.info("Escalating node '%s' to frontier model", node.name)
+    # Per-node model selection via router (when available)
+    routing_decision = None
+    if router is not None and hasattr(agent, "POLICY"):
+        routing_decision = router.select_model(agent.POLICY, state)
+        try:
+            effective_model_call = router.get_model_callable(routing_decision)
+        except RuntimeError:
+            # Adapter not registered — fall back to provided model_call
+            effective_model_call = model_call
+        logger.info("Router selected '%s' for node '%s' (escalated=%s, reason=%s)",
+                     routing_decision.model_name, node.name,
+                     routing_decision.escalated, routing_decision.reason)
+    else:
+        # Frontier escalation: use frontier model if this node was routed to via on_fail
+        # and the agent allows frontier models and a frontier callable is available
+        escalated_nodes = state.get("_escalated_nodes", set())
+        use_frontier = (
+            frontier_model_call is not None
+            and node.name in escalated_nodes
+            and getattr(agent, "POLICY", None)
+            and agent.POLICY.allowed_frontier_models
+        )
+        effective_model_call = frontier_model_call if use_frontier else model_call
+        if use_frontier:
+            logger.info("Escalating node '%s' to frontier model", node.name)
 
     for attempt in range(1, attempts + 1):
         event_id = str(uuid.uuid4())
@@ -273,8 +294,17 @@ def _execute_node(
                 "attempt": attempt,
                 "cost": budget.to_dict(),
             }
-            if use_frontier:
-                evt["escalated"] = True
+            if routing_decision is not None:
+                evt["routing"] = {
+                    "model": routing_decision.model_name,
+                    "escalated": routing_decision.escalated,
+                    "reason": routing_decision.reason,
+                }
+            elif router is None:
+                # Legacy escalation tracking
+                escalated_nodes = state.get("_escalated_nodes", set())
+                if node.name in escalated_nodes and frontier_model_call is not None:
+                    evt["escalated"] = True
             return evt
 
         except BudgetExceededError as exc:

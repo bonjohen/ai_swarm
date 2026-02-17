@@ -50,6 +50,7 @@ class SynthesizerAgent(BaseAgent):
         allowed_frontier_models=["frontier"],
         max_tokens=8192,
         confidence_threshold=0.8,
+        preferred_tier=2,
     )
 
     def parse(self, response: str) -> dict[str, Any]:

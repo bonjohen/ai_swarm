@@ -84,7 +84,7 @@ class PublisherAgent(BaseAgent):
     USER_TEMPLATE = "{_publisher_bypass}"
     INPUT_SCHEMA = PublisherInput
     OUTPUT_SCHEMA = PublisherOutput
-    POLICY = AgentPolicy(allowed_local_models=["local"], max_tokens=1024)
+    POLICY = AgentPolicy(allowed_local_models=["local"], max_tokens=1024, preferred_tier=0)
 
     def run(self, state: dict[str, Any], model_call: Any = None) -> dict[str, Any]:
         """Publishing is deterministic — no LLM call needed."""

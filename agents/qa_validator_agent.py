@@ -36,7 +36,7 @@ class QAValidatorAgent(BaseAgent):
     USER_TEMPLATE = "{_qa_bypass}"
     INPUT_SCHEMA = QAValidatorInput
     OUTPUT_SCHEMA = QAValidatorOutput
-    POLICY = AgentPolicy(allowed_local_models=["local"], max_tokens=2048)
+    POLICY = AgentPolicy(allowed_local_models=["local"], max_tokens=2048, preferred_tier=0)
 
     def run(self, state: dict[str, Any], model_call: Any = None) -> dict[str, Any]:
         """QA validation is deterministic — no LLM call needed."""

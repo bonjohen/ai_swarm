@@ -54,6 +54,7 @@ class NarrationFormatterAgent(BaseAgent):
         allowed_local_models=["local"],
         allowed_frontier_models=["frontier"],
         max_tokens=8192,
+        preferred_tier=2,
     )
 
     def parse(self, response: str) -> dict[str, Any]:

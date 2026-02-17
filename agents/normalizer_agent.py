@@ -37,6 +37,7 @@ class NormalizerAgent(BaseAgent):
         allowed_local_models=["local"],
         max_tokens=4096,
         confidence_threshold=0.5,
+        preferred_tier=1,
     )
 
     def parse(self, response: str) -> dict[str, Any]:

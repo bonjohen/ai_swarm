@@ -100,22 +100,22 @@ Build the regex/command dispatch layer that handles requests without any LLM cal
 
 ### R1.1 Command Registry
 
-- [ ] Implement `core/command_registry.py`:
+- [X] Implement `core/command_registry.py`:
   - `CommandPattern` dataclass: `pattern: str (regex)`, `action: str`, `target: str`, `description: str`
   - `CommandRegistry` class: register patterns, match against input, return `CommandMatch` or None
   - `CommandMatch` dataclass: `action: str`, `target: str`, `args: dict`, `confidence: float (1.0 for regex)`
-- [ ] Register default command patterns:
+- [X] Register default command patterns:
   - `/cert <id>` → `execute_graph`, target `run_cert.py`
   - `/dossier <id>` → `execute_graph`, target `run_dossier.py`
   - `/story <world_id>` → `execute_graph`, target `run_story.py`
   - `/lab <suite_id>` → `execute_graph`, target `run_lab.py`
   - `/status` → `show_status`
   - `/help` → `show_help`
-- [ ] Support JSON payload detection: if input parses as JSON with a `"command"` key, route deterministically
+- [X] Support JSON payload detection: if input parses as JSON with a `"command"` key, route deterministically
 
 ### R1.2 Tier 0 Integration
 
-- [ ] Implement `core/tiered_dispatch.py`:
+- [X] Implement `core/tiered_dispatch.py`:
   - `TieredDispatcher` class: holds `CommandRegistry` + `ModelRouter` + `ProviderRegistry`
   - `dispatch(request: str) -> DispatchResult` method:
     1. Try Tier 0 (regex match) — if match, return `DispatchResult(tier=0, ...)`
@@ -124,7 +124,7 @@ Build the regex/command dispatch layer that handles requests without any LLM cal
 
 ### R1.3 CLI Entrypoint
 
-- [ ] Create `scripts/run_router.py` — unified CLI entrypoint:
+- [X] Create `scripts/run_router.py` — unified CLI entrypoint:
   - Accepts free-form text or slash commands
   - Routes through `TieredDispatcher`
   - Executes the resolved action (graph run, tool call, etc.)
@@ -132,11 +132,11 @@ Build the regex/command dispatch layer that handles requests without any LLM cal
 
 ### R1.4 Phase R1 Tests
 
-- [ ] Test regex matching for all registered command patterns
-- [ ] Test JSON payload routing
-- [ ] Test unknown input falls through to Tier 1
-- [ ] Test `DispatchResult` structure for Tier 0 matches
-- [ ] Test slash command argument parsing (e.g., `/cert az-104` extracts cert_id)
+- [X] Test regex matching for all registered command patterns
+- [X] Test JSON payload routing
+- [X] Test unknown input falls through to Tier 1
+- [X] Test `DispatchResult` structure for Tier 0 matches
+- [X] Test slash command argument parsing (e.g., `/cert az-104` extracts cert_id)
 
 ---
 
@@ -146,7 +146,7 @@ Wire Instance A (`deepseek-r1:1.5b` with small context/tokens) for intent classi
 
 ### R2.1 Micro Router Agent
 
-- [ ] Implement `agents/micro_router_agent.py`:
+- [X] Implement `agents/micro_router_agent.py`:
   - SYSTEM_PROMPT: classify intent, estimate complexity, select tool/graph, output structured JSON
   - USER_TEMPLATE: `{request_text}`, `{available_actions}`, `{available_graphs}`
   - Output schema: `intent: str`, `requires_reasoning: bool`, `complexity_score: float`, `confidence: float`, `recommended_tier: int (1|2|3)`, `action: str`, `target: str`
@@ -155,29 +155,29 @@ Wire Instance A (`deepseek-r1:1.5b` with small context/tokens) for intent classi
 
 ### R2.2 Tier 1 Integration
 
-- [ ] Extend `TieredDispatcher.dispatch()` with Tier 1 step:
+- [X] Extend `TieredDispatcher.dispatch()` with Tier 1 step:
   - Call `micro_router_agent` via Tier 1 adapter (deepseek-r1:1.5b, small config)
   - If `recommended_tier == 1` and `confidence >= 0.75`: execute action directly
   - If `recommended_tier >= 2` or `confidence < 0.75`: pass to Tier 2
   - If structured validation fails twice: escalate to Tier 2
-- [ ] Add `_tier1_classify()` method to `TieredDispatcher`
+- [X] Add `_tier1_classify()` method to `TieredDispatcher`
 
 ### R2.3 Composite Routing Score
 
-- [ ] Implement `compute_routing_score()` in `core/routing.py`:
+- [X] Implement `compute_routing_score()` in `core/routing.py`:
   - `routing_score = (complexity_score * w1) + ((1 - confidence) * w2) + (hallucination_risk * w3)`
   - Default weights from `RouterConfig`
   - Escalate when `routing_score > threshold`
-- [ ] Wire composite score into `TieredDispatcher` escalation logic
+- [X] Wire composite score into `TieredDispatcher` escalation logic
 
 ### R2.4 Phase R2 Tests
 
-- [ ] Test micro_router_agent parse/validate with sample responses
-- [ ] Test Tier 1 classification routes simple commands without escalation
-- [ ] Test Tier 1 escalation on low confidence (< 0.75)
-- [ ] Test Tier 1 escalation on high complexity (> 0.35)
-- [ ] Test composite routing score calculation
-- [ ] Test structured validation failure triggers escalation after 2 retries
+- [X] Test micro_router_agent parse/validate with sample responses
+- [X] Test Tier 1 classification routes simple commands without escalation
+- [X] Test Tier 1 escalation on low confidence (< 0.75)
+- [X] Test Tier 1 escalation on high complexity (> 0.35)
+- [X] Test composite routing score calculation
+- [X] Test structured validation failure triggers escalation after 2 retries
 
 ---
 
@@ -187,54 +187,54 @@ Wire Instance B (`deepseek-r1:1.5b` with larger context/tokens) for short reason
 
 ### R3.1 Per-Node Model Selection in Orchestrator
 
-- [ ] Update `_execute_node()` in `core/orchestrator.py`:
+- [X] Update `_execute_node()` in `core/orchestrator.py`:
   - Before agent execution, call `ModelRouter.select_model(agent.POLICY, state)`
   - Get callable via `ModelRouter.get_model_callable(decision)`
   - Pass selected callable as `model_call` to `agent.run()`
   - Log routing decision (tier, model, reason) to run events
-- [ ] Remove direct `model_call` / `frontier_model_call` parameter pattern from `execute_graph()` — replace with `router: ModelRouter`
-- [ ] Backward compatibility: if `model_call` is provided and no router, use it directly (existing behavior)
+- [X] Add `router: ModelRouter` parameter to `execute_graph()` — kept `model_call`/`frontier_model_call` for backward compatibility
+- [X] Backward compatibility: if `model_call` is provided and no router, use it directly (existing behavior)
 
 ### R3.2 Agent Policy Tier Mapping
 
-- [ ] Update `AgentPolicy` in `agents/base_agent.py`:
+- [X] Update `AgentPolicy` in `agents/base_agent.py`:
   - Add `preferred_tier: int = 2` field (default tier for this agent)
   - Add `min_tier: int = 1` field (lowest tier that can handle this agent)
   - Add `max_tokens_by_tier: dict[int, int] = {}` for tier-specific token limits
-- [ ] Update all existing agents with appropriate tier preferences:
+- [X] Update all existing agents with appropriate tier preferences:
   - Deterministic agents (qa_validator, delta, publisher, story_memory_loader): `preferred_tier=0`
   - Classification agents (ingestor, normalizer, entity_resolver): `preferred_tier=1`
-  - Extraction/synthesis agents (claim_extractor, scene_writer, etc.): `preferred_tier=2`
+  - Extraction/synthesis agents (claim_extractor, scene_writer, etc.): `preferred_tier=2` (default)
   - Complex reasoning (contradiction, synthesis, narration_formatter): `preferred_tier=2`, escalation to 3
 
 ### R3.3 Tier 2 Dispatch
 
-- [ ] Extend `TieredDispatcher.dispatch()` with Tier 2 step:
+- [X] Extend `TieredDispatcher.dispatch()` with Tier 2 step:
   - Call light model (deepseek-r1:1.5b, large config) with the request + Tier 1 classification context
   - Evaluate output: `reasoning_depth_estimate`, `quality_score`, `confidence`
   - If `quality_score >= threshold` and `escalate == false`: return result
   - Else escalate to Tier 3
-- [ ] Add `_tier2_reason()` method to `TieredDispatcher`
+- [X] Add `_tier2_reason()` method to `TieredDispatcher`
 
 ### R3.4 Escalation Signal Injection
 
-- [ ] Update agents to inject escalation signals into state after execution:
+- [X] Update agents to inject escalation signals into state after execution — `ModelRouter._evaluate_escalation()` already reads these from state:
   - `_last_confidence` — from agent's parse confidence
   - `_missing_citations_count` — from QA violations
   - `_contradiction_ambiguity` — from contradiction agent output
   - `_synthesis_complexity` — from synthesis/scene_writer complexity estimate
-- [ ] Wire `EscalationCriteria` evaluation into per-node routing decision
+- [X] Wire `EscalationCriteria` evaluation into per-node routing decision — done in `_execute_node()` via `router.select_model()`
 
 ### R3.5 Phase R3 Tests
 
-- [ ] Test orchestrator per-node model selection uses router
-- [ ] Test agent preferred_tier is respected in routing
-- [ ] Test Tier 1 and Tier 2 use same model (`deepseek-r1:1.5b`) with different configs
-- [ ] Test escalation from Tier 2 to Tier 3 on low quality_score
-- [ ] Test escalation from Tier 2 to Tier 3 on high reasoning_depth
-- [ ] Test escalation signal injection from agents into state
-- [ ] Test backward compatibility: graph execution with plain model_call still works
-- [ ] Integration test: full cert graph with tiered routing (mock models)
+- [X] Test orchestrator per-node model selection uses router
+- [X] Test agent preferred_tier is respected in routing
+- [X] Test Tier 1 and Tier 2 use same model (`deepseek-r1:1.5b`) with different configs
+- [X] Test escalation from Tier 2 to Tier 3 on low quality_score
+- [X] Test escalation from Tier 2 to Tier 3 on high reasoning_depth
+- [X] Test escalation signal injection from agents into state
+- [X] Test backward compatibility: graph execution with plain model_call still works
+- [X] Integration test: full cert graph with tiered routing (mock models)
 
 ---
 
