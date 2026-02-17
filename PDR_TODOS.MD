@@ -4,21 +4,21 @@ All items below are derived from `PRD.MD`. Each phase is ordered by dependency �
 
 ---
 
-## Phase 0: Skeleton
+## Phase 0: Skeleton [COMPLETE]
 
 Establish the repo structure, data layer, orchestrator, and agent framework so that all subsequent phases have a foundation to build on.
 
 ### 0.1 Repository Layout
 
-- [ ] Create top-level `pyproject.toml` with project metadata, dependencies, and `[dev]` extras
-- [ ] Create package directories: `agents/`, `graphs/`, `core/`, `data/`, `connectors/`, `eval/`, `publish/`, `publish/templates/`, `scripts/`
-- [ ] Add `__init__.py` to each package directory
-- [ ] Create `publish/out/` directory and add it to `.gitignore`
+- [X] Create top-level `pyproject.toml` with project metadata, dependencies, and `[dev]` extras
+- [X] Create package directories: `agents/`, `graphs/`, `core/`, `data/`, `connectors/`, `eval/`, `publish/`, `publish/templates/`, `scripts/`
+- [X] Add `__init__.py` to each package directory
+- [X] Create `publish/out/` directory and add it to `.gitignore`
 - [ ] Create `README.md` with basic project description and CLI usage
 
 ### 0.2 SQLite Schema and Data Layer
 
-- [ ] Write `data/schema.sql` with all core tables:
+- [X] Write `data/schema.sql` with all core tables:
   - `source_docs` (doc_id, uri, source_type, retrieved_at, published_at, title, content_hash, text_path, meta_json)
   - `source_segments` (segment_id, doc_id, idx, text_path, meta_json)
   - `entities` (entity_id, type, names_json, props_json)
@@ -30,27 +30,27 @@ Establish the repo structure, data layer, orchestrator, and agent framework so t
   - `deltas` (delta_id, scope_type, scope_id, from_snapshot_id, to_snapshot_id, created_at, delta_json, stability_score, summary)
   - `runs` (run_id, scope_type, scope_id, graph_id, started_at, ended_at, status, cost_json, meta_json)
   - `run_events` (event_id, run_id, t, node_id, agent_id, status, cost_json, payload_json)
-- [ ] Write `data/schema.sql` with certification domain tables:
+- [X] Write `data/schema.sql` with certification domain tables:
   - `cert_objectives` (objective_id, cert_id, code, text, weight, prereqs_json, meta_json)
   - `cert_modules` (module_id, objective_id, version, content_json)
   - `cert_questions` (question_id, objective_id, version, qtype, content_json, grounding_claim_ids_json)
-- [ ] Write `data/schema.sql` with lab domain tables:
+- [X] Write `data/schema.sql` with lab domain tables:
   - `lab_models` (model_id, name, family, params_b, context_len, quant, provider, revision, caps_json)
   - `lab_hardware` (hw_id, spec_json)
   - `lab_tasks` (task_id, category, prompt_template, golden_json, rubric_json)
   - `lab_runs` (lab_run_id, suite_id, model_id, hw_id, t, settings_json, cost_json)
   - `lab_results` (result_id, lab_run_id, task_id, scores_json, fail_modes_json, notes)
-- [ ] Implement `data/db.py` — connection management, schema initialization, migrations
-- [ ] Implement `data/dao_sources.py` — CRUD for source_docs and source_segments
-- [ ] Implement `data/dao_entities.py` — CRUD for entities and relationships
-- [ ] Implement `data/dao_claims.py` — CRUD for claims
-- [ ] Implement `data/dao_metrics.py` — CRUD for metrics and metric_points
-- [ ] Implement `data/dao_snapshots.py` — CRUD for snapshots and deltas
-- [ ] Implement `data/dao_runs.py` — CRUD for runs and run_events
+- [X] Implement `data/db.py` — connection management, schema initialization, migrations
+- [X] Implement `data/dao_sources.py` — CRUD for source_docs and source_segments
+- [X] Implement `data/dao_entities.py` — CRUD for entities and relationships
+- [X] Implement `data/dao_claims.py` — CRUD for claims
+- [X] Implement `data/dao_metrics.py` — CRUD for metrics and metric_points
+- [X] Implement `data/dao_snapshots.py` — CRUD for snapshots and deltas
+- [X] Implement `data/dao_runs.py` — CRUD for runs and run_events
 
 ### 0.3 Agent Framework
 
-- [ ] Implement `agents/base_agent.py` — base class requiring:
+- [X] Implement `agents/base_agent.py` — base class requiring:
   - `AGENT_ID` (str)
   - `VERSION` (str)
   - `SYSTEM_PROMPT` (str)
@@ -61,11 +61,11 @@ Establish the repo structure, data layer, orchestrator, and agent framework so t
   - `parse(response) -> dict` method
   - `validate(output) -> None/raise` method
   - Runtime contract: input is `state: dict`, output is `delta_state: dict` merged into state
-- [ ] Implement `agents/registry.py` — agent registry that loads agent files by AGENT_ID key
+- [X] Implement `agents/registry.py` — agent registry that loads agent files by AGENT_ID key
 
 ### 0.4 Graph Definition and Loader
 
-- [ ] Implement `graphs/graph_types.py` — data structures for graph nodes with fields:
+- [X] Implement `graphs/graph_types.py` — data structures for graph nodes with fields:
   - `name` (node id)
   - `agent` (agent registry key)
   - `inputs` (list of state keys required)
@@ -74,58 +74,58 @@ Establish the repo structure, data layer, orchestrator, and agent framework so t
   - `on_fail` (next node id if gate_status=FAIL)
   - `retry` (count + backoff policy)
   - `budget` (optional token/$ cap override)
-- [ ] Implement YAML graph loader in `graphs/graph_types.py` — parse YAML files into graph structures
+- [X] Implement YAML graph loader in `graphs/graph_types.py` — parse YAML files into graph structures
 
 ### 0.5 Orchestrator
 
-- [ ] Implement `core/state.py` — run state as a dict, serializable to JSON per node, with required keys: scope_type, scope_id, run_id, graph_id, budget, artifacts, and per-node outputs
-- [ ] Implement `core/orchestrator.py` — graph runner that for each node:
+- [X] Implement `core/state.py` — run state as a dict, serializable to JSON per node, with required keys: scope_type, scope_id, run_id, graph_id, budget, artifacts, and per-node outputs
+- [X] Implement `core/orchestrator.py` — graph runner that for each node:
   1. Validates inputs exist in state
   2. Applies budget policy
   3. Executes agent
   4. Validates agent output schema
   5. Merges delta_state into state
   6. Emits run_event
-- [ ] Implement failure and retry logic:
+- [X] Implement failure and retry logic:
   - Node-level retry with capped attempts
   - Failed validation routes to `on_fail` node if defined
   - If `on_fail` absent, abort graph
-- [ ] Implement `core/errors.py` — error types for orchestration failures
-- [ ] Implement `core/policies.py` — policy definitions and enforcement
+- [X] Implement `core/errors.py` — error types for orchestration failures
+- [X] Implement `core/policies.py` — policy definitions and enforcement
 
 ### 0.6 Model Routing (Stub)
 
-- [ ] Implement `core/routing.py` — model routing interface with local-first default
+- [X] Implement `core/routing.py` — model routing interface with local-first default
   - Stub implementation that calls a local model
   - Interface for escalation to frontier models (to be wired in Phase 1)
 
 ### 0.7 Budget Tracking (Stub)
 
-- [ ] Implement `core/budgets.py` — budget tracking structure for tokens in/out, wall time, and dollar cost
+- [X] Implement `core/budgets.py` — budget tracking structure for tokens in/out, wall time, and dollar cost
   - Stub enforcement at per-node, per-run, and per-scope levels (full enforcement in Phase 4)
 
 ### 0.8 Phase 0 Tests
 
-- [ ] DAO read/write unit tests for each DAO module (SQLite round-trips)
-- [ ] Schema validation tests for graph node definitions
-- [ ] Orchestrator test with a minimal 2-node graph using mock agents
-- [ ] Agent base class tests verifying required attributes and parse/validate contract
+- [X] DAO read/write unit tests for each DAO module (SQLite round-trips)
+- [X] Schema validation tests for graph node definitions
+- [X] Orchestrator test with a minimal 2-node graph using mock agents
+- [X] Agent base class tests verifying required attributes and parse/validate contract
 
 ---
 
-## Phase 1: Spine Agents
+## Phase 1: Spine Agents [COMPLETE]
 
 Build the shared agents that all three loops depend on. These form the "spine" of the platform.
 
 ### 1.1 Connectors
 
-- [ ] Implement `connectors/web_fetch.py` — fetch web pages, return raw text/HTML
-- [ ] Implement `connectors/rss_fetch.py` — fetch and parse RSS/Atom feeds
-- [ ] Implement `connectors/file_loader.py` — load local files (PDF, text, markdown, JSON)
+- [X] Implement `connectors/web_fetch.py` — fetch web pages, return raw text/HTML
+- [X] Implement `connectors/rss_fetch.py` — fetch and parse RSS/Atom feeds
+- [X] Implement `connectors/file_loader.py` — load local files (PDF, text, markdown, JSON)
 
 ### 1.2 Ingestor Agent
 
-- [ ] Implement `agents/ingestor_agent.py`
+- [X] Implement `agents/ingestor_agent.py`
   - Fetches raw sources via connectors
   - Produces source_docs and source_segments in the data layer
   - Assigns content_hash for deduplication
@@ -133,14 +133,14 @@ Build the shared agents that all three loops depend on. These form the "spine" o
 
 ### 1.3 Normalizer Agent
 
-- [ ] Implement `agents/normalizer_agent.py`
+- [X] Implement `agents/normalizer_agent.py`
   - Normalizes raw text into consistent structure
   - Handles different source formats (HTML, PDF text, RSS content)
   - Outputs cleaned, structured text segments
 
 ### 1.4 Entity Resolver Agent
 
-- [ ] Implement `agents/entity_resolver_agent.py`
+- [X] Implement `agents/entity_resolver_agent.py`
   - Extracts entities from normalized segments
   - Resolves duplicate entities (name variants, aliases)
   - Creates entity records and relationships in data layer
@@ -148,7 +148,7 @@ Build the shared agents that all three loops depend on. These form the "spine" o
 
 ### 1.5 Claim Extractor Agent
 
-- [ ] Implement `agents/claim_extractor_agent.py`
+- [X] Implement `agents/claim_extractor_agent.py`
   - Extracts atomic claims from text segments
   - Each claim linked to citations (doc_id + segment_id)
   - Assigns evidence_strength and confidence scores
@@ -157,7 +157,7 @@ Build the shared agents that all three loops depend on. These form the "spine" o
 
 ### 1.6 Metric Extractor Agent
 
-- [ ] Implement `agents/metric_extractor_agent.py`
+- [X] Implement `agents/metric_extractor_agent.py`
   - Extracts quantitative metrics from text segments
   - Each metric point includes unit + dimensions
   - Links to source doc/segment for provenance
@@ -165,14 +165,14 @@ Build the shared agents that all three loops depend on. These form the "spine" o
 
 ### 1.7 Contradiction Agent
 
-- [ ] Implement `agents/contradiction_agent.py`
+- [X] Implement `agents/contradiction_agent.py`
   - Compares new claims against existing claims for the same scope
   - Detects contradictions and sets claim status to `disputed`
   - Produces contradiction report with both sides and citations
 
 ### 1.8 QA Validator Agent
 
-- [ ] Implement `agents/qa_validator_agent.py`
+- [X] Implement `agents/qa_validator_agent.py`
   - Enforces global gate rules:
     - No claim without citations
     - Every citation resolves to a doc+segment
@@ -182,7 +182,7 @@ Build the shared agents that all three loops depend on. These form the "spine" o
 
 ### 1.9 Delta Agent (Snapshot + Delta Engine)
 
-- [ ] Implement `agents/delta_agent.py`
+- [X] Implement `agents/delta_agent.py`
   - Creates snapshots: captures current claim IDs + metric IDs for a scope, computes hash
   - Computes deltas: structured diff on claim IDs + statement similarity vs previous snapshot
   - Produces delta_json with added/removed/changed claims and metrics
@@ -190,53 +190,53 @@ Build the shared agents that all three loops depend on. These form the "spine" o
 
 ### 1.10 Model Routing (Full)
 
-- [ ] Wire `core/routing.py` to actual local and frontier model adapters
+- [X] Wire `core/routing.py` to actual local and frontier model adapters
   - Escalate when: extraction confidence < threshold, missing citations detected repeatedly, contradiction ambiguity high, synthesis requires high fidelity
   - Log all escalation decisions to run_events
 
 ### 1.11 Phase 1 Tests
 
-- [ ] Unit tests for each spine agent's parse/validate methods with sample inputs
-- [ ] Connector tests with mock HTTP responses
-- [ ] Integration test: run ingestor → normalizer → entity_resolver → claim_extractor chain with fixture data
-- [ ] QA validator tests covering each gate rule (pass and fail cases)
-- [ ] Delta computation determinism tests (same input produces same delta)
+- [X] Unit tests for each spine agent's parse/validate methods with sample inputs
+- [X] Connector tests with mock HTTP responses
+- [X] Integration test: run ingestor → normalizer → entity_resolver → claim_extractor chain with fixture data
+- [X] QA validator tests covering each gate rule (pass and fail cases)
+- [X] Delta computation determinism tests (same input produces same delta)
 
 ---
 
-## Phase 2: Product Loop Agents and Graphs
+## Phase 2: Product Loop Agents and Graphs [COMPLETE]
 
 Build the domain-specific agents and wire up the three complete graph loops.
 
 ### 2.1 Certification Loop
 
-- [ ] Implement `agents/synthesizer_agent.py` — general synthesis agent constrained to provided claims, metrics, and delta reports only
-- [ ] Implement `agents/lesson_composer_agent.py`
+- [X] Implement `agents/synthesizer_agent.py` — general synthesis agent constrained to provided claims, metrics, and delta reports only
+- [X] Implement `agents/lesson_composer_agent.py`
   - Composes lesson modules (L1/L2/L3) per objective
   - Content grounded in extracted claims
   - Outputs content_json for cert_modules table
-- [ ] Implement `agents/question_generator_agent.py`
+- [X] Implement `agents/question_generator_agent.py`
   - Generates question bank per objective
   - Each question links to grounding claim IDs
   - Question count proportional to objective weight
   - Supports multiple question types (qtype)
   - Outputs content_json for cert_questions table
-- [ ] Write `graphs/certification_graph.yaml` — full node chain:
+- [X] Write `graphs/certification_graph.yaml` — full node chain:
   1. blueprint_ingest (ingestor)
   2. objective_graph (entity_resolver)
-  3. grounding_sweep (ingestor + normalizer)
+  3. grounding_sweep (normalizer)
   4. claim_extraction (claim_extractor)
   5. lesson_composition (lesson_composer)
   6. question_generation (question_generator)
   7. qa_validation (qa_validator) — on_fail routes back to claim_extraction
   8. snapshot (delta_agent)
   9. publish (publisher)
-- [ ] Certification-specific QA gate: every objective has a module + minimum question count proportional to weight
-- [ ] Implement `scripts/run_cert.py` — CLI entrypoint: `python -m scripts.run_cert --cert_id <id>`
+- [~] Certification-specific QA gate: every objective has a module + minimum question count proportional to weight
+- [X] Implement `scripts/run_cert.py` — CLI entrypoint: `python -m scripts.run_cert --cert_id <id>`
 
 ### 2.2 Dossier Loop
 
-- [ ] Write `graphs/dossier_graph.yaml` — full node chain:
+- [X] Write `graphs/dossier_graph.yaml` — full node chain:
   1. topic_ingest (ingestor)
   2. normalize (normalizer)
   3. entity_resolution (entity_resolver)
@@ -246,35 +246,35 @@ Build the domain-specific agents and wire up the three complete graph loops.
   7. snapshot (delta_agent)
   8. synthesis (synthesizer) — constrained to provided claims, metrics, delta report
   9. publish (publisher)
-- [ ] Dossier-specific QA gate: contradictions surfaced with claim status `disputed` and dispute notes from structured fields only
-- [ ] Dossier outputs: living dossier page, timeline of key changes, metric tables, "what changed" delta memo, contradiction list and claim status changes
-- [ ] Implement `scripts/run_dossier.py` — CLI entrypoint: `python -m scripts.run_dossier --topic_id <id>`
+- [~] Dossier-specific QA gate: contradictions surfaced with claim status `disputed` and dispute notes from structured fields only
+- [~] Dossier outputs: living dossier page, timeline of key changes, metric tables, "what changed" delta memo, contradiction list and claim status changes
+- [X] Implement `scripts/run_dossier.py` — CLI entrypoint: `python -m scripts.run_dossier --topic_id <id>`
 
 ### 2.3 Lab Loop
 
-- [ ] Implement `eval/rubrics.py` — scoring rubrics with required score components
-- [ ] Implement `eval/lab_tasks.py` — task definitions with prompt templates, golden answers, rubric references
-- [ ] Implement `eval/scoring.py` — scoring engine that produces scores_json and fail_modes_json
-- [ ] Write `graphs/lab_graph.yaml` — full node chain:
-  1. suite_assembly (selects tasks + models + hardware for the run)
-  2. benchmark_run (executes tasks against models)
-  3. scoring (scores results via rubrics)
-  4. trend_metrics (metric_extractor/aggregator — trend report vs baseline)
-  5. routing_recommendation (synthesizer constrained to results — recommended configs for quant, ctx, temperature; routing policy suggestions for local vs frontier thresholds)
+- [X] Implement `eval/rubrics.py` — scoring rubrics with required score components
+- [X] Implement `eval/lab_tasks.py` — task definitions with prompt templates, golden answers, rubric references
+- [X] Implement `eval/scoring.py` — scoring engine that produces scores_json and fail_modes_json
+- [X] Write `graphs/lab_graph.yaml` — full node chain:
+  1. suite_assembly (ingestor)
+  2. benchmark_run (synthesizer)
+  3. scoring (metric_extractor)
+  4. trend_metrics (synthesizer)
+  5. routing_recommendation (synthesizer)
   6. snapshot (delta_agent)
   7. publish (publisher)
-- [ ] Lab-specific QA gate: every result ties to model spec + hardware spec; rubric scoring produces required score components
-- [ ] Lab outputs: benchmark run logs + scored results, trend report, recommended configs, routing policy suggestions, "tricks playbook" (prompt patterns + known failure modes)
-- [ ] Implement `scripts/run_lab.py` — CLI entrypoint: `python -m scripts.run_lab --suite_id <id>`
+- [~] Lab-specific QA gate: every result ties to model spec + hardware spec; rubric scoring produces required score components
+- [~] Lab outputs: benchmark run logs + scored results, trend report, recommended configs, routing policy suggestions, "tricks playbook" (prompt patterns + known failure modes)
+- [X] Implement `scripts/run_lab.py` — CLI entrypoint: `python -m scripts.run_lab --suite_id <id>`
 
 ### 2.4 Phase 2 Tests
 
-- [ ] Integration test: certification graph end-to-end with fixture dataset (1 certification, 2 objectives)
-- [ ] Integration test: dossier graph end-to-end with fixture dataset (1 dossier, 3 sources)
-- [ ] Integration test: lab graph end-to-end with fixture dataset (1 suite, 2 tasks)
-- [ ] Lesson composer output schema validation tests
-- [ ] Question generator grounding tests (all questions reference valid claim IDs)
-- [ ] Lab scoring determinism tests
+- [X] Integration test: certification graph end-to-end with fixture dataset (1 certification, 2 objectives)
+- [X] Integration test: dossier graph end-to-end with fixture dataset (1 dossier, 3 sources)
+- [X] Integration test: lab graph end-to-end with fixture dataset (1 suite, 2 tasks)
+- [X] Lesson composer output schema validation tests
+- [X] Question generator grounding tests (all questions reference valid claim IDs)
+- [X] Lab scoring determinism tests
 
 ---
 
@@ -284,7 +284,7 @@ Build the publishing pipeline that packages and renders outputs for all three lo
 
 ### 3.1 Publisher Agent
 
-- [ ] Implement `agents/publisher_agent.py`
+- [X] Implement `agents/publisher_agent.py`
   - Render only — publisher cannot synthesize
   - Writes to `publish/out/<scope>/<version>/`
   - Must produce for every publish:
@@ -336,7 +336,7 @@ Ongoing improvements for robustness, observability, and automation.
 
 ### 4.2 Retry and Resilience
 
-- [ ] Node-level retry with configurable count and backoff policy
+- [X] Node-level retry with configurable count and backoff policy
 - [ ] Graceful handling of model API failures (timeouts, rate limits)
 - [ ] State checkpointing so failed runs can resume from last successful node
 
@@ -354,7 +354,7 @@ Ongoing improvements for robustness, observability, and automation.
 
 ### 4.5 Observability
 
-- [ ] Structured logging per node execution: run_id, scope_id, node_id, agent_id, model_used, cost
+- [~] Structured logging per node execution: run_id, scope_id, node_id, agent_id, model_used, cost
 - [ ] Log redaction for API keys and sensitive text
 - [ ] Observable metrics:
   - Run duration
