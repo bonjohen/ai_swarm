@@ -20,6 +20,7 @@ from typing import Any
 from core.logging import get_metrics_collector
 from data.db import get_initialized_connection
 from data.dao_runs import list_runs
+from data.dao_routing import get_tier_distribution, get_cost_by_provider, get_decisions_for_run
 
 logger = logging.getLogger(__name__)
 
@@ -31,11 +32,15 @@ class DashboardHandler(BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:
         path = self.path.split("?")[0].rstrip("/")
+        query = self.path.split("?")[1] if "?" in self.path else ""
+        params = dict(p.split("=", 1) for p in query.split("&") if "=" in p)
 
         if path == "/metrics":
             self._json_response(get_metrics_collector().to_dict())
         elif path == "/runs":
             self._json_response(self._recent_runs())
+        elif path == "/routing":
+            self._json_response(self._routing_metrics(params.get("run_id")))
         elif path == "/health":
             self._json_response({"status": "ok"})
         else:
@@ -58,6 +63,34 @@ class DashboardHandler(BaseHTTPRequestHandler):
         except Exception as exc:
             logger.error("Failed to fetch runs: %s", exc)
             return []
+
+    def _routing_metrics(self, run_id: str | None = None) -> dict[str, Any]:
+        """Aggregate routing metrics from DB and in-memory collector."""
+        mc = get_metrics_collector()
+        result: dict[str, Any] = {
+            "in_memory": {
+                "tier_distribution": mc.to_dict().get("tier_distribution", {}),
+                "escalation_rate": mc.to_dict().get("escalation_rate", 0.0),
+                "escalation_counts": mc.to_dict().get("escalation_counts", {}),
+                "provider_distribution": mc.to_dict().get("provider_distribution", {}),
+                "cost_by_provider": mc.to_dict().get("cost_by_provider", {}),
+                "avg_latency_by_tier": mc.to_dict().get("avg_latency_by_tier", {}),
+                "avg_quality_by_tier": mc.to_dict().get("avg_quality_by_tier", {}),
+            },
+        }
+        try:
+            conn = get_initialized_connection(_DB_PATH)
+            result["db"] = {
+                "tier_distribution": get_tier_distribution(conn, run_id),
+                "cost_by_provider": get_cost_by_provider(conn, run_id),
+            }
+            if run_id:
+                result["db"]["decisions"] = get_decisions_for_run(conn, run_id)
+            conn.close()
+        except Exception as exc:
+            logger.error("Failed to fetch routing metrics from DB: %s", exc)
+            result["db"] = {"error": str(exc)}
+        return result
 
     def log_message(self, fmt: str, *args: Any) -> None:
         logger.debug(fmt, *args)

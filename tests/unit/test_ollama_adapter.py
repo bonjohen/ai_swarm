@@ -128,10 +128,10 @@ def test_malformed_response_not_retryable(mock_post: MagicMock) -> None:
 
 def test_factory_defaults() -> None:
     adapter = make_ollama_adapter()
-    assert adapter.model == "qwen2.5:7b"
+    assert adapter.model == "llama3:8b-instruct-q8_0"
     assert adapter.host == "http://localhost:11434"
     assert adapter.temperature == 0.2
-    assert adapter.timeout == 120.0
+    assert adapter.timeout == 300.0
 
 
 def test_factory_explicit_args() -> None:

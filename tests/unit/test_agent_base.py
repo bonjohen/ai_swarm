@@ -184,7 +184,7 @@ class TestValidationRepair:
         delta = agent.run({"message": "test"}, model_call=model_with_repair)
         assert delta["echoed"] == "fixed"
         assert len(calls) == 2
-        assert "had an error" in calls[1].lower()
+        assert "malformed text to repair" in calls[1].lower()
 
     def test_repair_exhausted_raises(self):
         """After MAX_REPAIR_ATTEMPTS, the parse/validate error is raised."""

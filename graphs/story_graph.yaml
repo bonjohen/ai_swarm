@@ -81,6 +81,9 @@ nodes:
     inputs: [episode_text, characters, episode_title, delta_json]
     outputs: [narration_script, recap]
     next: publish
+    retry:
+      max_attempts: 2
+      backoff_seconds: 2.0
     budget:
       max_tokens: 8192
 

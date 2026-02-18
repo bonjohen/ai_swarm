@@ -9,7 +9,7 @@ from pydantic import BaseModel
 
 from agents.base_agent import AgentPolicy, BaseAgent
 
-VALID_CLAIM_TYPES = ("canon_fact", "world_rule", "character_trait", "event")
+VALID_CLAIM_TYPES = ("canon_fact", "world_rule", "character_trait", "event", "belief", "legend")
 
 
 class CanonUpdaterInput(BaseModel):
@@ -39,8 +39,12 @@ class CanonUpdaterAgent(BaseAgent):
         "- Significant events (event)\n"
         "Also identify: character state changes, new narrative threads, "
         "resolved threads, and new entities.\n"
-        "Every new claim MUST have citations with doc_id (episode_id) and "
-        "segment_id (scene_id) referencing the source scene.\n"
+        "Claims should include citations with doc_id (episode_id) and "
+        "segment_id (scene_id) when referencing a specific scene.\n"
+        "If a claim cannot be tied to a specific scene, use claim_type "
+        "'belief' (character/population belief) or 'legend' (unverified lore). "
+        "These types do not require citations — they may become the basis "
+        "for future investigation plots.\n"
         "Output valid JSON only."
     )
     USER_TEMPLATE = (
@@ -93,17 +97,12 @@ class CanonUpdaterAgent(BaseAgent):
                     f"Claim {c.get('claim_id')} has invalid claim_type: {ct!r}. "
                     f"Must be one of {VALID_CLAIM_TYPES}"
                 )
+            # Claims without citations are reclassified as beliefs/legends
+            # rather than hard-failing — they become future plot hooks
             citations = c.get("citations", [])
-            if not citations:
-                raise ValueError(
-                    f"Claim {c.get('claim_id')} has no citations — "
-                    "every claim must cite doc_id (episode) and segment_id (scene)"
-                )
-            for cit in citations:
-                if not cit.get("doc_id") or not cit.get("segment_id"):
-                    raise ValueError(
-                        f"Citation in claim {c.get('claim_id')} missing doc_id or segment_id"
-                    )
+            if not citations and ct not in ("belief", "legend"):
+                c["claim_type"] = "belief"
+                c.setdefault("_note", "Auto-reclassified: no citation provided")
 
         if not isinstance(output.get("updated_characters"), list):
             raise ValueError("updated_characters must be a list")

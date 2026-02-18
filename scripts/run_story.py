@@ -28,7 +28,8 @@ from agents.publisher_agent import PublisherAgent
 from core.budgets import BudgetLedger
 from core.orchestrator import execute_graph
 from core.state import create_initial_state
-from core.adapters import make_model_call
+from core.adapters import make_model_call, make_router_from_config, OllamaAdapter, AnthropicAdapter, make_ollama_adapter
+from core.routing import ModelRouter, RoutingDecision
 from data.db import get_initialized_connection
 from data.dao_runs import insert_run, finish_run
 from data.dao_story_worlds import insert_world, get_world, increment_episode_number
@@ -42,6 +43,54 @@ from graphs.graph_types import load_graph
 
 logger = logging.getLogger(__name__)
 GRAPH_PATH = Path(__file__).parent.parent / "graphs" / "story_graph.yaml"
+
+# Agent IDs that need frontier (Haiku) for creative work
+CREATIVE_AGENTS = {"premise_architect", "plot_architect", "scene_writer", "narration_formatter"}
+
+
+class StoryTieredRouter(ModelRouter):
+    """Routes creative agents to Anthropic Haiku, extraction agents to local Ollama."""
+
+    def __init__(self, local: OllamaAdapter, frontier: AnthropicAdapter):
+        super().__init__()
+        self._local = local
+        self._frontier = frontier
+        self.register_local(local)
+        self.register_frontier(frontier)
+
+    def select_model(self, agent_policy, state):
+        agent_id = state.get("_current_agent_id", "")
+        if agent_id in CREATIVE_AGENTS:
+            return RoutingDecision(
+                model_name=self._frontier.name,
+                reason=f"creative agent '{agent_id}' → frontier",
+                escalated=True,
+            )
+        return RoutingDecision(
+            model_name=self._local.name,
+            reason=f"extraction/tier0 agent '{agent_id}' → local",
+            escalated=False,
+        )
+
+
+def _print_token_summary(local: OllamaAdapter, frontier: AnthropicAdapter) -> None:
+    """Print per-adapter token usage summary."""
+    print("\n=== Token Usage Summary ===")
+    print(f"  Ollama ({local.model}):")
+    print(f"    Calls:         {local.call_count}")
+    print(f"    Input tokens:  {local.total_input_tokens:,}")
+    print(f"    Output tokens: {local.total_output_tokens:,}")
+    print(f"  Anthropic ({frontier.model}):")
+    print(f"    Calls:         {frontier.call_count}")
+    print(f"    Input tokens:  {frontier.total_input_tokens:,}")
+    print(f"    Output tokens: {frontier.total_output_tokens:,}")
+    total_in = local.total_input_tokens + frontier.total_input_tokens
+    total_out = local.total_output_tokens + frontier.total_output_tokens
+    print(f"  Total:")
+    print(f"    Calls:         {local.call_count + frontier.call_count}")
+    print(f"    Input tokens:  {total_in:,}")
+    print(f"    Output tokens: {total_out:,}")
+    print("===========================\n")
 
 
 def _register_agents() -> None:
@@ -135,15 +184,26 @@ def _persist_world_state(conn, world_id: str, episode_number: int, state: dict, 
         )
 
     # 2. Update characters (beliefs, goals, traits, arc_stage)
+    # Valid keyword args for update_character()
+    _VALID_CHAR_FIELDS = {"name", "role", "alive", "traits", "goals", "fears", "beliefs", "voice_notes", "meta"}
     for update in state.get("updated_characters", []):
         cid = update.get("character_id")
         if not cid:
             continue
         changes = update.get("changes", {})
+        # Normalize: LLMs sometimes return DB column names (e.g. traits_json)
+        # instead of the API names (traits). Strip the _json suffix.
+        normalized = {}
+        for k, v in changes.items():
+            key = k.removesuffix("_json")
+            normalized[key] = v
+        changes = normalized
         # Separate arc_stage (requires sequential enforcement) from other fields
         arc_stage = changes.pop("arc_stage", None)
-        if changes:
-            update_character(conn, cid, **changes)
+        # Filter to only valid fields to guard against unexpected LLM keys
+        safe_changes = {k: v for k, v in changes.items() if k in _VALID_CHAR_FIELDS}
+        if safe_changes:
+            update_character(conn, cid, **safe_changes)
         if arc_stage:
             try:
                 update_arc_stage(conn, cid, arc_stage)
@@ -229,6 +289,11 @@ def main(argv: list[str] | None = None) -> int:
                         help="Model call mode: stub, ollama, ollama:<model>")
     parser.add_argument("--frontier-model", default=None,
                         help="Frontier model for escalation on retry (e.g., ollama:llama3:70b)")
+    parser.add_argument("--tiered", action="store_true",
+                        help="Tiered routing: creative agents on Anthropic Haiku, "
+                             "extraction on local Ollama")
+    parser.add_argument("--router-config", default=None,
+                        help="Path to router_config.yaml for tiered model routing")
     parser.add_argument("-v", "--verbose", action="store_true")
     args = parser.parse_args(argv)
 
@@ -268,15 +333,35 @@ def main(argv: list[str] | None = None) -> int:
         },
     )
 
-    model_call = make_model_call(args.model_call)
-    frontier_model_call = make_model_call(args.frontier_model) if args.frontier_model else None
     budget = BudgetLedger(max_tokens=32768)
+    local_adapter = None
+    frontier_adapter = None
 
-    logger.info("Starting story run %s for world_id=%s", run_id, args.world_id)
-    result = execute_graph(
-        graph, state, model_call=model_call,
-        frontier_model_call=frontier_model_call, budget=budget,
-    )
+    if args.tiered:
+        local_adapter = make_ollama_adapter()
+        frontier_adapter = AnthropicAdapter(
+            name="haiku",
+            model="claude-haiku-4-5-20251001",
+            max_tokens=8192,
+            min_interval=1.0,  # 1s between calls to stay within free tier
+        )
+        router = StoryTieredRouter(local=local_adapter, frontier=frontier_adapter)
+        logger.info("Tiered mode: creative → %s, extraction → %s",
+                     frontier_adapter.model, local_adapter.model)
+        logger.info("Starting story run %s for world_id=%s", run_id, args.world_id)
+        result = execute_graph(graph, state, router=router, budget=budget)
+    elif args.router_config:
+        router = make_router_from_config(args.router_config)
+        logger.info("Starting story run %s for world_id=%s (router-config)", run_id, args.world_id)
+        result = execute_graph(graph, state, router=router, budget=budget)
+    else:
+        model_call = make_model_call(args.model_call)
+        frontier_model_call = make_model_call(args.frontier_model) if args.frontier_model else None
+        logger.info("Starting story run %s for world_id=%s", run_id, args.world_id)
+        result = execute_graph(
+            graph, state, model_call=model_call,
+            frontier_model_call=frontier_model_call, budget=budget,
+        )
 
     end_time = datetime.now(timezone.utc).isoformat()
     finish_run(conn, run_id, ended_at=end_time, status=result.status, cost=budget.to_dict())
@@ -290,6 +375,9 @@ def main(argv: list[str] | None = None) -> int:
         for event in result.events:
             if event.get("status") == "failed":
                 logger.error("Failed at node %s: %s", event["node_id"], event.get("error"))
+
+    if args.tiered and local_adapter and frontier_adapter:
+        _print_token_summary(local_adapter, frontier_adapter)
 
     conn.close()
     return 0 if result.status == "completed" else 1

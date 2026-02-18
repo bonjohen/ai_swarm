@@ -49,6 +49,7 @@ class TierConfig:
     max_tokens: int
     temperature: float
     concurrency: int = 1
+    timeout: float = 30.0  # seconds
 
 
 @dataclass
@@ -147,6 +148,18 @@ class ModelRouter:
         if adapter is None:
             raise RuntimeError(f"No adapter registered for model: {decision.model_name}")
         return adapter.call
+
+    def reload_config(self, path: str | Path) -> None:
+        """Hot-reload router configuration from YAML.
+
+        Updates escalation criteria and stores the new config. Adapters
+        are NOT replaced (they hold live connections/state); only the
+        routing thresholds change.
+        """
+        new_config = load_router_config(path)
+        self.escalation_criteria = new_config.escalation
+        self.config = new_config
+        logger.info("Router config reloaded from %s", path)
 
     def _evaluate_escalation(
         self, policy: AgentPolicy, state: dict[str, Any]

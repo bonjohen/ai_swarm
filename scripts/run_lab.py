@@ -21,7 +21,7 @@ from agents.synthesizer_agent import SynthesizerAgent
 from agents.publisher_agent import PublisherAgent
 from core.budgets import BudgetLedger
 from core.orchestrator import execute_graph
-from core.adapters import make_model_call
+from core.adapters import make_model_call, make_router_from_config
 from core.state import create_initial_state
 from data.db import get_initialized_connection
 from data.dao_runs import insert_run, finish_run
@@ -49,6 +49,8 @@ def main(argv: list[str] | None = None) -> int:
                         help="Path to a JSON file with seed data (suite_config, tasks, models, etc.)")
     parser.add_argument("--model-call", default="stub",
                         help="Model call mode: stub, ollama, ollama:<model>")
+    parser.add_argument("--router-config", default=None,
+                        help="Path to router_config.yaml for tiered model routing")
     parser.add_argument("-v", "--verbose", action="store_true")
     args = parser.parse_args(argv)
 
@@ -90,11 +92,15 @@ def main(argv: list[str] | None = None) -> int:
         },
     )
 
-    model_call = make_model_call(args.model_call)
     budget = BudgetLedger()
 
     logger.info("Starting lab run %s for suite_id=%s", run_id, args.suite_id)
-    result = execute_graph(graph, state, model_call=model_call, budget=budget)
+    if args.router_config:
+        router = make_router_from_config(args.router_config)
+        result = execute_graph(graph, state, router=router, budget=budget)
+    else:
+        model_call = make_model_call(args.model_call)
+        result = execute_graph(graph, state, model_call=model_call, budget=budget)
 
     end_time = datetime.now(timezone.utc).isoformat()
     finish_run(conn, run_id, ended_at=end_time, status=result.status, cost=budget.to_dict())

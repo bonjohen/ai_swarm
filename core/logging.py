@@ -130,6 +130,13 @@ class MetricsCollector:
     _local_calls: int = 0
     _qa_failures: dict[str, int] = field(default_factory=dict)
     _delta_magnitudes: list[float] = field(default_factory=list)
+    # Router metrics (R5.1)
+    _tier_distribution: dict[int, int] = field(default_factory=dict)
+    _escalation_counts: dict[str, int] = field(default_factory=dict)  # "from_tier:to_tier" -> count
+    _provider_distribution: dict[str, int] = field(default_factory=dict)
+    _cost_by_provider: dict[str, float] = field(default_factory=dict)
+    _latencies_by_tier: dict[int, list[float]] = field(default_factory=dict)
+    _quality_by_tier: dict[int, list[float]] = field(default_factory=dict)
 
     def record_run_duration(self, seconds: float) -> None:
         self._run_durations.append(seconds)
@@ -149,9 +156,54 @@ class MetricsCollector:
     def record_delta_magnitude(self, added: int, removed: int, changed: int) -> None:
         self._delta_magnitudes.append(added + removed + changed)
 
+    def record_routing_decision(
+        self,
+        *,
+        chosen_tier: int,
+        provider: str | None = None,
+        escalated: bool = False,
+        request_tier: int | None = None,
+        latency_ms: float | None = None,
+        quality_score: float | None = None,
+        cost_usd: float | None = None,
+    ) -> None:
+        """Record a routing decision for aggregate metrics."""
+        self._tier_distribution[chosen_tier] = self._tier_distribution.get(chosen_tier, 0) + 1
+        if escalated and request_tier is not None:
+            key = f"{request_tier}:{chosen_tier}"
+            self._escalation_counts[key] = self._escalation_counts.get(key, 0) + 1
+        if provider:
+            self._provider_distribution[provider] = self._provider_distribution.get(provider, 0) + 1
+            if cost_usd is not None:
+                self._cost_by_provider[provider] = self._cost_by_provider.get(provider, 0.0) + cost_usd
+        if latency_ms is not None:
+            self._latencies_by_tier.setdefault(chosen_tier, []).append(latency_ms)
+        if quality_score is not None:
+            self._quality_by_tier.setdefault(chosen_tier, []).append(quality_score)
+
     def frontier_usage_rate(self) -> float:
         total = self._frontier_calls + self._local_calls
         return self._frontier_calls / total if total > 0 else 0.0
+
+    def escalation_rate(self) -> float:
+        """Fraction of routing decisions that were escalated."""
+        total = sum(self._tier_distribution.values())
+        escalated = sum(self._escalation_counts.values())
+        return escalated / total if total > 0 else 0.0
+
+    def avg_latency_by_tier(self) -> dict[int, float]:
+        return {
+            tier: round(sum(lats) / len(lats), 2)
+            for tier, lats in self._latencies_by_tier.items()
+            if lats
+        }
+
+    def avg_quality_by_tier(self) -> dict[int, float]:
+        return {
+            tier: round(sum(scores) / len(scores), 4)
+            for tier, scores in self._quality_by_tier.items()
+            if scores
+        }
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -169,6 +221,13 @@ class MetricsCollector:
                 round(sum(self._delta_magnitudes) / len(self._delta_magnitudes), 2)
                 if self._delta_magnitudes else 0.0
             ),
+            "tier_distribution": dict(self._tier_distribution),
+            "escalation_rate": round(self.escalation_rate(), 4),
+            "escalation_counts": dict(self._escalation_counts),
+            "provider_distribution": dict(self._provider_distribution),
+            "cost_by_provider": {k: round(v, 6) for k, v in self._cost_by_provider.items()},
+            "avg_latency_by_tier": self.avg_latency_by_tier(),
+            "avg_quality_by_tier": self.avg_quality_by_tier(),
         }
 
 

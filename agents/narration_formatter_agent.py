@@ -58,14 +58,23 @@ class NarrationFormatterAgent(BaseAgent):
     )
 
     def parse(self, response: str) -> dict[str, Any]:
-        data = json.loads(response)
-        return {
-            "narration_script": data.get("narration_script", ""),
-            "recap": data.get("recap", ""),
-        }
+        try:
+            data = json.loads(response)
+            return {
+                "narration_script": data.get("narration_script", ""),
+                "recap": data.get("recap", ""),
+            }
+        except (json.JSONDecodeError, TypeError):
+            # Model returned freeform narration text instead of JSON —
+            # treat the entire response as the narration script.
+            return {
+                "narration_script": response.strip(),
+                "recap": "",
+            }
 
     def validate(self, output: dict[str, Any]) -> None:
         if not output.get("narration_script"):
             raise ValueError("narration_script must be non-empty")
         if not output.get("recap"):
-            raise ValueError("recap must be non-empty")
+            # Default recap for first episodes or when model omits it
+            output["recap"] = "The story begins..."

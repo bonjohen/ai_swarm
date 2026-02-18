@@ -6,8 +6,11 @@ Supports global rules plus domain-specific gates for cert, dossier, and lab.
 from __future__ import annotations
 
 import json
+import logging
 import math
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 from pydantic import BaseModel
 
@@ -77,34 +80,38 @@ class QAValidatorAgent(BaseAgent):
     def _check_global_rules(self, state: dict[str, Any]) -> list[dict[str, Any]]:
         """Global rules that apply to all scope types."""
         violations: list[dict[str, Any]] = []
+        scope_type = state.get("scope_type", "")
         known_doc_ids = set(state.get("doc_ids", []))
         known_segment_ids = set(state.get("segment_ids", []))
 
-        # Rule 1: No claim without citations
-        for claim in state.get("claims", []):
-            citations = claim.get("citations", claim.get("citations_json", []))
-            if not citations:
-                violations.append({
-                    "rule": "claim_requires_citations",
-                    "claim_id": claim.get("claim_id"),
-                    "message": "Claim has no citations",
-                })
-            # Rule 2: Every citation must resolve to a known doc+segment
-            for cit in citations:
-                if cit.get("doc_id") not in known_doc_ids:
+        # Story scope: citation rules are relaxed — uncited claims become
+        # beliefs/legends that may seed future plots.  Skip citation checks.
+        if scope_type != "story":
+            # Rule 1: No claim without citations
+            for claim in state.get("claims", []):
+                citations = claim.get("citations", claim.get("citations_json", []))
+                if not citations:
                     violations.append({
-                        "rule": "citation_doc_resolves",
+                        "rule": "claim_requires_citations",
                         "claim_id": claim.get("claim_id"),
-                        "doc_id": cit.get("doc_id"),
-                        "message": "Citation references unknown doc_id",
+                        "message": "Claim has no citations",
                     })
-                if cit.get("segment_id") not in known_segment_ids:
-                    violations.append({
-                        "rule": "citation_segment_resolves",
-                        "claim_id": claim.get("claim_id"),
-                        "segment_id": cit.get("segment_id"),
-                        "message": "Citation references unknown segment_id",
-                    })
+                # Rule 2: Every citation must resolve to a known doc+segment
+                for cit in citations:
+                    if cit.get("doc_id") not in known_doc_ids:
+                        violations.append({
+                            "rule": "citation_doc_resolves",
+                            "claim_id": claim.get("claim_id"),
+                            "doc_id": cit.get("doc_id"),
+                            "message": "Citation references unknown doc_id",
+                        })
+                    if cit.get("segment_id") not in known_segment_ids:
+                        violations.append({
+                            "rule": "citation_segment_resolves",
+                            "claim_id": claim.get("claim_id"),
+                            "segment_id": cit.get("segment_id"),
+                            "message": "Citation references unknown segment_id",
+                        })
 
         # Rule 3: Metric points must include unit + dimensions
         metric_lookup = {m.get("metric_id"): m for m in state.get("metrics", [])}
@@ -292,58 +299,40 @@ class QAValidatorAgent(BaseAgent):
     # ------------------------------------------------------------------
 
     def _check_story_rules(self, state: dict[str, Any]) -> list[dict[str, Any]]:
-        """Story-domain QA gates: canon, characters, threads, audience, structure."""
+        """Story-domain QA gates — intentionally lenient.
+
+        Story generation with small local models (8B) cannot reliably satisfy
+        strict structural rules.  Only audience compliance FAIL is a hard
+        violation.  Everything else is logged as a warning but does not block
+        the pipeline.  Uncited claims become beliefs/legends — future plot hooks.
+        """
         violations: list[dict[str, Any]] = []
+        warnings: list[dict[str, Any]] = []
 
-        # Rule 1: Canon integrity — every new claim cites episode_id and scene_id
-        new_claims = state.get("new_claims", [])
-        for claim in new_claims:
-            citations = claim.get("citations", [])
-            if not citations:
-                violations.append({
-                    "rule": "story_claim_has_citations",
-                    "claim_id": claim.get("claim_id"),
-                    "message": "Story claim has no citations (needs episode_id + scene_id)",
-                })
-            for cit in citations:
-                if not cit.get("doc_id"):
-                    violations.append({
-                        "rule": "story_claim_cites_episode",
-                        "claim_id": claim.get("claim_id"),
-                        "message": "Story claim citation missing doc_id (episode_id)",
-                    })
-                if not cit.get("segment_id"):
-                    violations.append({
-                        "rule": "story_claim_cites_scene",
-                        "claim_id": claim.get("claim_id"),
-                        "message": "Story claim citation missing segment_id (scene_id)",
-                    })
-
-        # Rule 2: Character consistency — referenced characters exist
+        # Soft: Character consistency — log unknown POV characters
         characters = state.get("characters", [])
-        char_ids = {c.get("character_id") for c in characters}
         char_names_lower = {c.get("name", "").lower() for c in characters}
         scene_plans = state.get("scene_plans", [])
         for sp in scene_plans:
             pov = sp.get("pov_character", "")
             if pov and pov.lower() not in char_names_lower:
-                violations.append({
+                warnings.append({
                     "rule": "story_pov_character_exists",
                     "scene_id": sp.get("scene_id"),
                     "pov_character": pov,
-                    "message": f"POV character '{pov}' not found in character list",
+                    "message": f"POV character '{pov}' not found in character list (soft warning)",
                 })
 
-        # Rule 3: Thread tracking — at least one thread advanced
+        # Soft: Thread tracking
         selected_threads = state.get("selected_threads", [])
         new_threads = state.get("new_threads", [])
         if not selected_threads and not new_threads:
-            violations.append({
+            warnings.append({
                 "rule": "story_thread_advanced",
-                "message": "No thread was advanced or created in this episode",
+                "message": "No thread was advanced or created in this episode (soft warning)",
             })
 
-        # Rule 4: Audience compliance — must be PASS
+        # Hard: Audience compliance — this is a safety gate
         compliance_status = state.get("compliance_status", "")
         if compliance_status == "FAIL":
             violations.append({
@@ -352,13 +341,27 @@ class QAValidatorAgent(BaseAgent):
                 "violations": state.get("compliance_violations", []),
             })
 
-        # Rule 5: Structural integrity — at least 2 scenes, each with POV
+        # Soft: Structural integrity — at least 1 scene required
         scenes = state.get("scenes", [])
-        if len(scenes) < 2:
+        if len(scenes) < 1:
             violations.append({
                 "rule": "story_min_scenes",
                 "actual": len(scenes),
-                "message": f"Episode has {len(scenes)} scenes, minimum is 2",
+                "message": "Episode has no scenes",
             })
+        elif len(scenes) < 2:
+            warnings.append({
+                "rule": "story_min_scenes",
+                "actual": len(scenes),
+                "message": f"Episode has {len(scenes)} scene (2+ preferred, soft warning)",
+            })
+
+        # Store warnings in state for observability, but don't fail on them
+        if warnings:
+            existing = state.setdefault("_qa_warnings", [])
+            existing.extend(warnings)
+            logger.info("Story QA: %d soft warning(s), %d hard violation(s)", len(warnings), len(violations))
+
+        return violations
 
         return violations

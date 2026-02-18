@@ -22,6 +22,7 @@ from core.errors import (
     NodeError,
     RoutingFailure,
 )
+from core.logging import get_metrics_collector
 from core.routing import ModelRouter
 from core.state import merge_delta, validate_state
 from graphs.graph_types import Graph, GraphNode
@@ -120,6 +121,8 @@ def execute_graph(
     run_id = state["run_id"]
     events: list[dict[str, Any]] = []
     current_node_name = graph.entry
+    max_on_fail_cycles = 3  # prevent infinite on_fail loops
+    on_fail_counts: dict[str, int] = {}  # node_name -> on_fail trigger count
 
     # If resuming, skip to the node after resume_from
     if resume_from:
@@ -137,8 +140,14 @@ def execute_graph(
         if not found:
             raise GraphError(f"Cannot resume: node '{resume_from}' not found in graph")
 
+    step_number = 0
     while current_node_name is not None:
+        step_number += 1
         node = graph.get_node(current_node_name)
+        logger.info(
+            "[step %d] >>> Node '%s' (agent=%s) starting",
+            step_number, node.name, node.agent,
+        )
 
         # Inject degradation hints into state if budget is under pressure
         hint = budget.get_degradation_hint()
@@ -171,8 +180,16 @@ def execute_graph(
                 _save_checkpoint(run_id, node.name, state)
 
             if node.end:
+                logger.info(
+                    "[step %d] <<< Node '%s' (agent=%s) completed [END]",
+                    step_number, node.name, node.agent,
+                )
                 current_node_name = None
             else:
+                logger.info(
+                    "[step %d] <<< Node '%s' (agent=%s) completed → next '%s'",
+                    step_number, node.name, node.agent, node.next,
+                )
                 current_node_name = node.next
 
         elif event["status"] == "budget_degraded":
@@ -187,7 +204,24 @@ def execute_graph(
 
         elif event["status"] == "failed":
             if node.on_fail:
-                logger.warning("Node '%s' failed, routing to on_fail '%s'", node.name, node.on_fail)
+                # Track on_fail cycle count to prevent infinite loops
+                on_fail_counts[node.name] = on_fail_counts.get(node.name, 0) + 1
+                if on_fail_counts[node.name] > max_on_fail_cycles:
+                    logger.error(
+                        "Node '%s' exceeded max on_fail cycles (%d), aborting graph",
+                        node.name, max_on_fail_cycles,
+                    )
+                    return RunResult(
+                        run_id=run_id,
+                        status="failed",
+                        state=state,
+                        events=events,
+                        budget=budget,
+                    )
+                logger.warning(
+                    "Node '%s' failed (cycle %d/%d), routing to on_fail '%s'",
+                    node.name, on_fail_counts[node.name], max_on_fail_cycles, node.on_fail,
+                )
                 # Track escalation: mark the on_fail target for frontier escalation
                 escalated = state.setdefault("_escalated_nodes", set())
                 escalated.add(node.on_fail)
@@ -229,6 +263,8 @@ def _execute_node(
     agent: BaseAgent = get_agent(node.agent)
     attempts = max(node.retry.max_attempts, 1)
 
+    state["_current_agent_id"] = agent.AGENT_ID
+
     # Per-node model selection via router (when available)
     routing_decision = None
     if router is not None and hasattr(agent, "POLICY"):
@@ -269,7 +305,9 @@ def _execute_node(
             budget.check(node.budget)
 
             # 3. Execute agent (use frontier model if escalated)
+            t0 = time.monotonic()
             delta_state = agent.run(state, model_call=effective_model_call)
+            latency_ms = (time.monotonic() - t0) * 1000
 
             # 4. Output schema validation is done inside agent.run() via validate()
 
@@ -280,11 +318,50 @@ def _execute_node(
             # not as an exception. If on_fail is defined, raise so the fail path
             # routes to the recovery node.
             if (delta_state.get("gate_status") == "FAIL" and node.on_fail):
+                violations = delta_state.get("violations", [])
+                for v in violations:
+                    logger.warning(
+                        "  QA violation: %s — %s",
+                        v.get("rule", "?"), v.get("message", "?"),
+                    )
                 raise ValueError(
-                    f"QA gate FAIL: {len(delta_state.get('violations', []))} violation(s)"
+                    f"QA gate FAIL: {len(violations)} violation(s)"
                 )
 
-            # 6. Emit success event
+            # 6. Log routing telemetry
+            if routing_decision is not None:
+                metrics = get_metrics_collector()
+                chosen_tier = 3 if routing_decision.escalated else getattr(agent.POLICY, "preferred_tier", 2)
+                metrics.record_routing_decision(
+                    chosen_tier=chosen_tier,
+                    provider=routing_decision.model_name,
+                    escalated=routing_decision.escalated,
+                    request_tier=getattr(agent.POLICY, "preferred_tier", 2),
+                    latency_ms=latency_ms,
+                )
+                metrics.record_model_call(escalated=routing_decision.escalated)
+                # Persist to DB if connection available
+                conn = state.get("conn")
+                if conn is not None:
+                    try:
+                        from data.dao_routing import insert_routing_decision
+                        insert_routing_decision(
+                            conn,
+                            decision_id=str(uuid.uuid4()),
+                            run_id=run_id,
+                            node_id=node.name,
+                            agent_id=agent.AGENT_ID,
+                            request_tier=getattr(agent.POLICY, "preferred_tier", 2),
+                            chosen_tier=chosen_tier,
+                            provider=routing_decision.model_name,
+                            escalation_reason=routing_decision.reason if routing_decision.escalated else None,
+                            latency_ms=latency_ms,
+                            created_at=_utcnow(),
+                        )
+                    except Exception as db_exc:
+                        logger.debug("Failed to persist routing decision: %s", db_exc)
+
+            # 7. Emit success event
             evt = {
                 "event_id": event_id,
                 "run_id": run_id,
@@ -293,6 +370,7 @@ def _execute_node(
                 "agent_id": agent.AGENT_ID,
                 "status": "success",
                 "attempt": attempt,
+                "latency_ms": round(latency_ms, 1),
                 "cost": budget.to_dict(),
             }
             if routing_decision is not None:

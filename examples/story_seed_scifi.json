@@ -1,0 +1,87 @@
+{
+  "world": {
+    "world_id": "station-aurora",
+    "name": "Station Aurora",
+    "genre": "science fiction",
+    "tone": "tense, hopeful",
+    "setting": {
+      "geography": "A generation ship orbiting a dying star, divided into 12 habitation rings",
+      "technology": "Post-scarcity fabrication, AI-assisted navigation, failing FTL drive",
+      "society": "Meritocratic council of ring-captains, growing tension between rings",
+      "era": "Year 347 of the voyage, 50 years past the original arrival date"
+    },
+    "thematic_constraints": ["duty vs self-interest", "truth vs stability", "legacy"],
+    "audience_profile": {
+      "age_range": "16+",
+      "vocabulary_level": "advanced",
+      "tolerance_for_violence": "moderate",
+      "tolerance_for_complexity": "high",
+      "preferred_tone": "tense, character-driven",
+      "reading_duration_target": "15-25 minutes",
+      "moral_density_preference": "heavy",
+      "pacing_preference": "measured"
+    }
+  },
+  "characters": [
+    {
+      "character_id": "char-kael",
+      "name": "Kael Voss",
+      "role": "protagonist",
+      "traits": ["methodical", "quietly stubborn", "empathetic"],
+      "goals": ["diagnose why the FTL drive keeps failing", "protect Ring 7 from resource cuts"],
+      "fears": ["being wrong about something that matters", "becoming his father"],
+      "beliefs": ["systems don't lie, people do", "everyone on the ship deserves the truth"],
+      "voice_notes": "Speaks precisely. Pauses before important words. Avoids contractions when stressed."
+    },
+    {
+      "character_id": "char-senna",
+      "name": "Senna Park",
+      "role": "deuteragonist",
+      "traits": ["charismatic", "pragmatic", "secretly afraid"],
+      "goals": ["hold the council together", "keep the food riots from spreading"],
+      "fears": ["that the ship will never arrive", "losing control"],
+      "beliefs": ["hope is a resource you ration", "a good lie saves more lives than a hard truth"],
+      "voice_notes": "Warm and persuasive in public. Clipped and tired in private. Uses metaphors about weather."
+    },
+    {
+      "character_id": "char-ren",
+      "name": "Ren",
+      "role": "supporting",
+      "traits": ["young", "idealistic", "technically brilliant"],
+      "goals": ["prove the backup navigation logs were tampered with"],
+      "fears": ["being dismissed because of age"],
+      "beliefs": ["the old generation owes the young an explanation"],
+      "voice_notes": "Fast-talking. Interrupts. Uses ship jargon casually."
+    },
+    {
+      "character_id": "char-mourner",
+      "name": "The Mourner",
+      "role": "antagonist",
+      "traits": ["patient", "eloquent", "fanatical"],
+      "goals": ["convince the ship to stop running and accept the dying star as home"],
+      "fears": ["being forgotten"],
+      "beliefs": ["the voyage was a mistake from the beginning"],
+      "voice_notes": "Speaks slowly, almost a cadence. References old Earth poetry. Never raises voice."
+    }
+  ],
+  "threads": [
+    {
+      "thread_id": "thread-ftl-sabotage",
+      "title": "The FTL Sabotage",
+      "thematic_tag": "mystery",
+      "related_character_ids": ["char-kael", "char-ren"]
+    },
+    {
+      "thread_id": "thread-ring7-famine",
+      "title": "The Ring 7 Famine",
+      "thematic_tag": "social tension",
+      "related_character_ids": ["char-senna", "char-kael"]
+    },
+    {
+      "thread_id": "thread-mourner-cult",
+      "title": "The Mourner's Following",
+      "thematic_tag": "ideology",
+      "related_character_ids": ["char-mourner"]
+    }
+  ]
+}

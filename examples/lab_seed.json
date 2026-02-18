@@ -8,7 +8,7 @@
     {"model_id": "deepseek-r1:1.5b"},
     {"model_id": "qwen2.5:7b"}
   ],
-  "hw_spec": {"gpu": "RTX 4090", "ram": "64GB"},
+  "hw_spec": {"gpu": "RTX 4070", "ram": "16GB"},
   "normalized_segments": [
     {"segment_id": "s1", "text": "Benchmark results for model comparison suite."}
   ],

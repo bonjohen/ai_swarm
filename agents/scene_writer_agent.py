@@ -47,8 +47,7 @@ class SceneWriterAgent(BaseAgent):
         "Audience profile:\n{audience_profile}\n\n"
         "Violations to fix (empty on first pass):\n{violations}\n\n"
         "Return JSON with:\n"
-        '- "scenes": [{{"scene_id": str, "text": str, "word_count": int}}]\n'
-        '- "episode_text": str (full concatenated text of all scenes)'
+        '- "scenes": [{{"scene_id": str, "text": str, "word_count": int}}]'
     )
     INPUT_SCHEMA = SceneWriterInput
     OUTPUT_SCHEMA = SceneWriterOutput
@@ -60,9 +59,14 @@ class SceneWriterAgent(BaseAgent):
 
     def parse(self, response: str) -> dict[str, Any]:
         data = json.loads(response)
+        scenes = data.get("scenes", [])
+        episode_text = data.get("episode_text", "")
+        # Compute episode_text from scenes when missing (e.g. truncated output)
+        if not episode_text and scenes:
+            episode_text = "\n\n".join(s.get("text", "") for s in scenes)
         return {
-            "scenes": data.get("scenes", []),
-            "episode_text": data.get("episode_text", ""),
+            "scenes": scenes,
+            "episode_text": episode_text,
         }
 
     def validate(self, output: dict[str, Any]) -> None:

@@ -9,7 +9,6 @@ Tests cover all 4 graph loops (story, certification, dossier, lab) and verify:
 """
 
 import json
-import shutil
 from pathlib import Path
 from typing import Any
 
@@ -29,7 +28,7 @@ from agents.narration_formatter_agent import NarrationFormatterAgent
 from agents.normalizer_agent import NormalizerAgent
 from agents.plot_architect_agent import PlotArchitectAgent
 from agents.premise_architect_agent import PremiseArchitectAgent
-from agents.publisher_agent import PUBLISH_ROOT, PublisherAgent
+from agents.publisher_agent import PublisherAgent
 from agents.qa_validator_agent import QAValidatorAgent
 from agents.question_generator_agent import QuestionGeneratorAgent
 from agents.scene_writer_agent import SceneWriterAgent
@@ -335,9 +334,6 @@ def register_story_agents():
     registry.register(PublisherAgent())
     yield
     registry.clear()
-    out_dir = PUBLISH_ROOT / "story"
-    if out_dir.exists():
-        shutil.rmtree(out_dir)
 
 
 @pytest.fixture
@@ -354,9 +350,6 @@ def register_cert_agents():
     registry.register(PublisherAgent())
     yield
     registry.clear()
-    out_dir = PUBLISH_ROOT / "cert"
-    if out_dir.exists():
-        shutil.rmtree(out_dir)
 
 
 @pytest.fixture
@@ -373,9 +366,6 @@ def register_dossier_agents():
     registry.register(PublisherAgent())
     yield
     registry.clear()
-    out_dir = PUBLISH_ROOT / "topic"
-    if out_dir.exists():
-        shutil.rmtree(out_dir)
 
 
 @pytest.fixture
@@ -388,9 +378,6 @@ def register_lab_agents():
     registry.register(PublisherAgent())
     yield
     registry.clear()
-    out_dir = PUBLISH_ROOT / "lab"
-    if out_dir.exists():
-        shutil.rmtree(out_dir)
 
 
 # ---------------------------------------------------------------------------

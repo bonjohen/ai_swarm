@@ -1,0 +1,71 @@
+{
+  "world": {
+    "world_id": "ash-harbor",
+    "name": "Ash Harbor",
+    "genre": "noir mystery",
+    "tone": "atmospheric, morally gray",
+    "setting": {
+      "geography": "A fog-bound port city on the Pacific coast, 1947",
+      "society": "Post-war boom masking deep corruption; dockworkers, ex-soldiers, old money",
+      "technology": "Rotary phones, film cameras, early wiretaps",
+      "atmosphere": "Perpetual low fog. Rain three days out of five. Neon reflects off wet streets."
+    },
+    "thematic_constraints": ["justice vs mercy", "the cost of knowing", "loyalty under pressure"],
+    "audience_profile": {
+      "age_range": "18+",
+      "vocabulary_level": "advanced",
+      "tolerance_for_violence": "moderate",
+      "tolerance_for_complexity": "high",
+      "preferred_tone": "atmospheric noir",
+      "reading_duration_target": "15-20 minutes",
+      "moral_density_preference": "heavy",
+      "pacing_preference": "slow burn"
+    }
+  },
+  "characters": [
+    {
+      "character_id": "char-maren",
+      "name": "Maren Cole",
+      "role": "protagonist",
+      "traits": ["observant", "tired", "principled despite herself"],
+      "goals": ["find who killed dockworker Jimmy Tsao", "keep her PI license"],
+      "fears": ["becoming as corrupt as the people she investigates", "her past catching up"],
+      "beliefs": ["everyone lies, but the lies tell you something", "the dead deserve answers"],
+      "voice_notes": "Dry, understated. Short sentences. Internal monologue is more poetic than her speech."
+    },
+    {
+      "character_id": "char-dutch",
+      "name": "Dutch Harmon",
+      "role": "supporting",
+      "traits": ["gregarious", "owed favors by half the city", "hiding something"],
+      "goals": ["protect his bar from the Halloran family", "help Maren without getting killed"],
+      "fears": ["what he did during the war coming out"],
+      "beliefs": ["a man's word used to mean something"],
+      "voice_notes": "Booming laugh. Speaks in stories. Deflects hard questions with jokes."
+    },
+    {
+      "character_id": "char-iris",
+      "name": "Iris Halloran",
+      "role": "antagonist",
+      "traits": ["poised", "calculating", "unexpectedly kind to those who can't hurt her"],
+      "goals": ["expand Halloran shipping into legitimate business", "bury the family's wartime dealings"],
+      "fears": ["her father's legacy defining her", "vulnerability"],
+      "beliefs": ["power is the only honest currency"],
+      "voice_notes": "Carefully modulated voice. Uses silence as a weapon. Never apologizes."
+    }
+  ],
+  "threads": [
+    {
+      "thread_id": "thread-tsao-murder",
+      "title": "The Tsao Murder",
+      "thematic_tag": "central mystery",
+      "related_character_ids": ["char-maren"]
+    },
+    {
+      "thread_id": "thread-halloran-empire",
+      "title": "The Halloran Empire",
+      "thematic_tag": "power",
+      "related_character_ids": ["char-iris", "char-dutch"]
+    }
+  ]
+}

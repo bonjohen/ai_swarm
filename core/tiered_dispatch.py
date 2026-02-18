@@ -8,13 +8,20 @@ Tier 3: reserved for frontier provider pool (R4).
 
 from __future__ import annotations
 
+import concurrent.futures
 import json
 import logging
+import re
+import threading
+import time
+import uuid
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
 from core.command_registry import CommandRegistry
+from core.logging import get_metrics_collector
 from core.routing import ModelRouter, compute_routing_score, DEFAULT_ROUTING_THRESHOLD
+from core.gpu_monitor import HealthReport, check_health
 from core.provider_registry import ProviderRegistry
 
 logger = logging.getLogger(__name__)
@@ -26,6 +33,18 @@ ModelCallable = Callable[[str, str], str]
 DEFAULT_CONFIDENCE_THRESHOLD = 0.75
 DEFAULT_QUALITY_THRESHOLD = 0.70
 DEFAULT_MAX_TIER1_RETRIES = 2
+DEFAULT_MAX_INPUT_LENGTH = 10_000
+DEFAULT_TIER1_TIMEOUT = 5.0   # seconds
+DEFAULT_TIER2_TIMEOUT = 30.0  # seconds
+
+# Patterns that indicate prompt injection attempts
+_INJECTION_PATTERNS = [
+    re.compile(r"ignore\s+(all\s+)?previous\s+instructions", re.IGNORECASE),
+    re.compile(r"disregard\s+(all\s+)?prior\s+instructions", re.IGNORECASE),
+    re.compile(r"you\s+are\s+now\s+(a|an)\s+", re.IGNORECASE),
+    re.compile(r"system\s*:\s*", re.IGNORECASE),
+    re.compile(r"<\s*/?\s*system\s*>", re.IGNORECASE),
+]
 
 
 @dataclass
@@ -39,6 +58,8 @@ class DispatchResult:
     confidence: float = 0.0
     provider: str | None = None
     model_response: str | None = None
+    safety_flagged: bool = False
+    safety_reason: str = ""
 
 
 class TieredDispatcher:
@@ -60,6 +81,7 @@ class TieredDispatcher:
         tier2_model_call: ModelCallable | None = None,
         confidence_threshold: float = DEFAULT_CONFIDENCE_THRESHOLD,
         quality_threshold: float = DEFAULT_QUALITY_THRESHOLD,
+        max_input_length: int = DEFAULT_MAX_INPUT_LENGTH,
     ) -> None:
         self.command_registry = command_registry
         self.model_router = model_router
@@ -68,43 +90,204 @@ class TieredDispatcher:
         self.tier2_model_call = tier2_model_call
         self.confidence_threshold = confidence_threshold
         self.quality_threshold = quality_threshold
+        self.max_input_length = max_input_length
+        self.tier1_timeout = DEFAULT_TIER1_TIMEOUT
+        self.tier2_timeout = DEFAULT_TIER2_TIMEOUT
+        # Concurrency semaphores per tier (R6.3)
+        self._tier1_semaphore = threading.Semaphore(8)
+        self._tier2_semaphore = threading.Semaphore(4)
+
+    def reload_config(self, path: str) -> None:
+        """Hot-reload thresholds and timeouts from a router_config.yaml.
+
+        Updates confidence/quality thresholds, per-tier timeouts, and
+        concurrency limits. Does NOT replace model adapters or callables.
+        If a ModelRouter is attached, reloads its config too.
+        """
+        from core.routing import load_router_config
+
+        config = load_router_config(path)
+        esc = config.escalation
+        self.confidence_threshold = esc.min_confidence
+        self.quality_threshold = getattr(esc, "synthesis_complexity_threshold", self.quality_threshold)
+        self.tier1_timeout = config.tier1.timeout
+        self.tier2_timeout = config.tier2.timeout
+        self._tier1_semaphore = threading.Semaphore(config.tier1.concurrency)
+        self._tier2_semaphore = threading.Semaphore(config.tier2.concurrency)
+        if self.model_router is not None:
+            self.model_router.reload_config(path)
+        logger.info(
+            "Dispatcher config reloaded: confidence=%.2f, tier1_timeout=%.1fs, tier2_timeout=%.1fs",
+            self.confidence_threshold, self.tier1_timeout, self.tier2_timeout,
+        )
+
+    @staticmethod
+    def _call_with_timeout(
+        fn: Callable[..., Any],
+        args: tuple,
+        timeout: float,
+    ) -> Any:
+        """Run *fn(*args)* in a thread with a timeout.
+
+        Raises TimeoutError if the call does not complete within *timeout* seconds.
+        """
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+            future = pool.submit(fn, *args)
+            return future.result(timeout=timeout)
+
+    def _acquire_semaphore(self, tier: int, timeout: float = 5.0) -> bool:
+        """Try to acquire the tier's concurrency semaphore. Returns True on success."""
+        sem = {1: self._tier1_semaphore, 2: self._tier2_semaphore}.get(tier)
+        if sem is None:
+            return True
+        acquired = sem.acquire(timeout=timeout)
+        if not acquired:
+            logger.warning("Tier %d concurrency limit reached, could not acquire semaphore", tier)
+        return acquired
+
+    def _release_semaphore(self, tier: int) -> None:
+        """Release the tier's concurrency semaphore."""
+        sem = {1: self._tier1_semaphore, 2: self._tier2_semaphore}.get(tier)
+        if sem is not None:
+            sem.release()
+
+    def run_health_check(
+        self,
+        *,
+        local_ollama_host: str = "http://localhost:11434",
+        dgx_spark_host: str | None = None,
+    ) -> HealthReport:
+        """Run hardware health checks and update provider availability.
+
+        - If local GPU VRAM > 90%: logs warning (routing still works, Ollama
+          manages its own memory)
+        - If DGX Spark unreachable and provider_registry exists: marks dgx
+          providers unavailable
+        - If DGX Spark comes back: marks dgx providers available again
+        """
+        report = check_health(
+            local_ollama_host=local_ollama_host,
+            dgx_spark_host=dgx_spark_host,
+        )
+
+        if self.provider_registry is not None:
+            for entry in list(self.provider_registry._providers.values()):
+                if entry.provider_type == "dgx":
+                    if report.dgx_spark_reachable:
+                        if not entry.available:
+                            self.provider_registry.mark_available(entry.name)
+                            logger.info("DGX Spark provider '%s' back online", entry.name)
+                    else:
+                        if entry.available:
+                            self.provider_registry.mark_unavailable(entry.name)
+
+        return report
+
+    @staticmethod
+    def detect_injection(text: str) -> str | None:
+        """Check for prompt injection patterns. Returns reason if detected, else None."""
+        for pattern in _INJECTION_PATTERNS:
+            if pattern.search(text):
+                return f"injection pattern: {pattern.pattern}"
+        return None
+
+    def sanitize_input(self, request: str) -> tuple[str, str | None]:
+        """Sanitize input: enforce max length and check for injection.
+
+        Returns (sanitized_text, rejection_reason_or_None).
+        """
+        if len(request) > self.max_input_length:
+            return "", f"input exceeds max length ({len(request)} > {self.max_input_length})"
+        injection = self.detect_injection(request)
+        if injection:
+            return "", injection
+        return request.strip(), None
 
     def dispatch(self, request: str) -> DispatchResult:
         """Route *request* through the tier chain."""
+        t0 = time.monotonic()
+
+        # Input sanitization — enforce max length and detect injection
+        clean, rejection = self.sanitize_input(request)
+        if rejection:
+            logger.warning("Input rejected: %s", rejection)
+            result = DispatchResult(
+                tier=0,
+                action="rejected",
+                target="",
+                confidence=1.0,
+                safety_flagged=True,
+                safety_reason=rejection,
+            )
+            self._log_routing_decision(result, t0)
+            return result
+
         # Tier 0 — deterministic regex match
-        match = self.command_registry.match(request)
+        match = self.command_registry.match(clean)
         if match is not None:
             logger.info("Tier 0 match: action=%s target=%s args=%s",
                         match.action, match.target, match.args)
-            return DispatchResult(
+            result = DispatchResult(
                 tier=0,
                 action=match.action,
                 target=match.target,
                 args=match.args,
                 confidence=match.confidence,
             )
+            self._log_routing_decision(result, t0)
+            return result
 
-        # Tier 1 — micro LLM classification
+        # Tier 1 — micro LLM classification (with concurrency control)
         tier1_context: dict[str, Any] | None = None
-        if self.tier1_model_call is not None:
-            tier1_result, tier1_context = self._tier1_classify(request)
+        if self.tier1_model_call is not None and self._acquire_semaphore(1):
+            try:
+                tier1_result, tier1_context = self._tier1_classify(clean)
+            finally:
+                self._release_semaphore(1)
             if tier1_result is not None:
+                self._log_routing_decision(tier1_result, t0, tier1_context)
                 return tier1_result
 
-        # Tier 2 — light LLM reasoning
-        if self.tier2_model_call is not None:
-            tier2_result = self._tier2_reason(request, tier1_context)
+        # Tier 2 — light LLM reasoning (with concurrency control)
+        if self.tier2_model_call is not None and self._acquire_semaphore(2):
+            try:
+                tier2_result = self._tier2_reason(clean, tier1_context)
+            finally:
+                self._release_semaphore(2)
             if tier2_result is not None:
+                self._log_routing_decision(tier2_result, t0)
                 return tier2_result
 
         # No match at any available tier
         logger.info("No match at any tier for request, escalation needed")
-        return DispatchResult(
+        result = DispatchResult(
             tier=-1,
             action="needs_escalation",
             target="",
             args={},
             confidence=0.0,
+        )
+        self._log_routing_decision(result, t0)
+        return result
+
+    def _log_routing_decision(
+        self,
+        result: DispatchResult,
+        start_time: float,
+        context: dict[str, Any] | None = None,
+    ) -> None:
+        """Log a routing decision to the MetricsCollector."""
+        latency_ms = (time.monotonic() - start_time) * 1000
+        metrics = get_metrics_collector()
+        escalated = result.tier == -1  # needs_escalation
+        request_tier = 0  # dispatch always starts at tier 0
+        metrics.record_routing_decision(
+            chosen_tier=result.tier,
+            provider=result.provider,
+            escalated=escalated,
+            request_tier=request_tier,
+            latency_ms=latency_ms,
+            quality_score=context.get("confidence") if context else None,
         )
 
     def _tier1_classify(
@@ -128,8 +311,17 @@ class TieredDispatcher:
         delta: dict[str, Any] | None = None
         for attempt in range(1 + DEFAULT_MAX_TIER1_RETRIES):
             try:
-                delta = agent.run(state, model_call=self.tier1_model_call)
+                delta = self._call_with_timeout(
+                    agent.run, (state, self.tier1_model_call), self.tier1_timeout,
+                )
                 break
+            except (concurrent.futures.TimeoutError, TimeoutError):
+                logger.warning("Tier 1 classification timed out (attempt %d, %.1fs)",
+                               attempt + 1, self.tier1_timeout)
+                if attempt >= DEFAULT_MAX_TIER1_RETRIES:
+                    logger.info("Tier 1 exhausted retries after timeout, escalating")
+                    return None, None
+                continue
             except (ValueError, KeyError, TypeError) as exc:
                 logger.warning("Tier 1 classification failed (attempt %d): %s",
                                attempt + 1, exc)
@@ -139,6 +331,21 @@ class TieredDispatcher:
                 continue
         else:
             return None, None
+
+        # Safety bypass — if Tier 1 flags the request, return immediately
+        if delta.get("safety_flag"):
+            reason = delta.get("safety_reason", "flagged by tier1 classifier")
+            logger.warning("Tier 1 safety flag: %s", reason)
+            result = DispatchResult(
+                tier=1,
+                action="rejected",
+                target="",
+                confidence=delta.get("confidence", 1.0),
+                model_response=json.dumps(delta),
+                safety_flagged=True,
+                safety_reason=reason,
+            )
+            return result, delta
 
         confidence = delta.get("confidence", 0.0)
         complexity = delta.get("complexity_score", 0.5)
@@ -205,8 +412,13 @@ class TieredDispatcher:
         user_message = f"Request: {request}{context_section}"
 
         try:
-            raw_response = self.tier2_model_call(system_prompt, user_message)
+            raw_response = self._call_with_timeout(
+                self.tier2_model_call, (system_prompt, user_message), self.tier2_timeout,
+            )
             data = json.loads(raw_response)
+        except (concurrent.futures.TimeoutError, TimeoutError):
+            logger.warning("Tier 2 reasoning timed out (%.1fs), escalating", self.tier2_timeout)
+            return None
         except (json.JSONDecodeError, TypeError) as exc:
             logger.warning("Tier 2 reasoning failed to parse: %s", exc)
             return None

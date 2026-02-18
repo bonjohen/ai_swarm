@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import os
+import time
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -27,6 +28,9 @@ class OllamaAdapter:
     max_tokens: int = 4096
     context_length: int = 4096
     extra_options: dict[str, Any] = field(default_factory=dict)
+    total_input_tokens: int = 0
+    total_output_tokens: int = 0
+    call_count: int = 0
 
     def call(self, system_prompt: str, user_message: str) -> str:
         """POST to Ollama /api/chat and return the assistant content string."""
@@ -80,6 +84,10 @@ class OllamaAdapter:
                 retryable=False,
             ) from exc
 
+        self.total_input_tokens += data.get("prompt_eval_count", 0)
+        self.total_output_tokens += data.get("eval_count", 0)
+        self.call_count += 1
+
         return content
 
 
@@ -93,20 +101,21 @@ def make_ollama_adapter(
 ) -> OllamaAdapter:
     """Factory with config precedence: explicit arg > env var > default."""
     return OllamaAdapter(
-        model=model or os.environ.get("OLLAMA_MODEL", "qwen2.5:7b"),
+        model=model or os.environ.get("OLLAMA_MODEL", "llama3:8b-instruct-q8_0"),
         host=host or os.environ.get("OLLAMA_HOST", "http://localhost:11434"),
         temperature=temperature if temperature is not None else 0.2,
-        timeout=timeout if timeout is not None else 120.0,
+        timeout=timeout if timeout is not None else 300.0,
         max_tokens=max_tokens if max_tokens is not None else 4096,
-        context_length=context_length if context_length is not None else 4096,
+        context_length=context_length if context_length is not None else 8192,
     )
 
 
 def make_micro_adapter() -> OllamaAdapter:
     """Tier 1 micro adapter — fast classification/routing with minimal context."""
+    model = os.environ.get("OLLAMA_TIER1_MODEL", "deepseek-r1:1.5b")
     return OllamaAdapter(
         name="micro",
-        model="deepseek-r1:1.5b",
+        model=model,
         temperature=0.0,
         max_tokens=128,
         context_length=2048,
@@ -115,12 +124,29 @@ def make_micro_adapter() -> OllamaAdapter:
 
 def make_light_adapter() -> OllamaAdapter:
     """Tier 2 light adapter — extraction/summarisation with moderate context."""
+    model = os.environ.get("OLLAMA_TIER2_MODEL", "deepseek-r1:1.5b")
     return OllamaAdapter(
         name="light",
-        model="deepseek-r1:1.5b",
+        model=model,
         temperature=0.2,
         max_tokens=1024,
         context_length=4096,
+    )
+
+
+def make_json_recovery_adapter() -> OllamaAdapter:
+    """Small model for recovering structured JSON from freeform LLM output.
+
+    Uses the tier2 light model with enough context to ingest the raw text and
+    enough output tokens to produce the full JSON structure.
+    """
+    model = os.environ.get("OLLAMA_TIER2_MODEL", "deepseek-r1:1.5b")
+    return OllamaAdapter(
+        name="json_recovery",
+        model=model,
+        temperature=0.0,
+        max_tokens=2048,
+        context_length=8192,
     )
 
 
@@ -134,6 +160,11 @@ class AnthropicAdapter:
     max_tokens: int = 4096
     temperature: float = 0.2
     timeout: float = 120.0
+    total_input_tokens: int = 0
+    total_output_tokens: int = 0
+    call_count: int = 0
+    min_interval: float = 0.0  # seconds between calls (rate limiter)
+    _last_call_time: float = field(default=0.0, repr=False)
 
     def __post_init__(self) -> None:
         if not self.api_key:
@@ -141,6 +172,12 @@ class AnthropicAdapter:
 
     def call(self, system_prompt: str, user_message: str) -> str:
         """POST to Anthropic /v1/messages and return the assistant text."""
+        if self.min_interval > 0 and self._last_call_time > 0:
+            elapsed = time.monotonic() - self._last_call_time
+            if elapsed < self.min_interval:
+                time.sleep(self.min_interval - elapsed)
+        self._last_call_time = time.monotonic()
+
         url = "https://api.anthropic.com/v1/messages"
         headers = {
             "x-api-key": self.api_key,
@@ -187,6 +224,11 @@ class AnthropicAdapter:
                 message=f"Malformed response: {exc}",
                 retryable=False,
             ) from exc
+
+        usage = data.get("usage", {})
+        self.total_input_tokens += usage.get("input_tokens", 0)
+        self.total_output_tokens += usage.get("output_tokens", 0)
+        self.call_count += 1
 
         return content
 
@@ -287,6 +329,51 @@ class DGXSparkAdapter:
         return self._inner.call(system_prompt, user_message)
 
 
+def make_router_from_config(config_path: str) -> "ModelRouter":
+    """Build a fully-wired ModelRouter from a router_config.yaml file.
+
+    Creates Tier 1 (micro) and Tier 2 (light) local adapters from the config,
+    loads Tier 3 frontier providers into a ProviderRegistry, and wires
+    everything into a ModelRouter with the config's escalation criteria.
+    """
+    from core.routing import ModelRouter, load_router_config
+    from core.provider_registry import ProviderRegistry, load_providers_from_config
+
+    config = load_router_config(config_path)
+
+    # Build tier adapters from config
+    tier1 = OllamaAdapter(
+        name="micro",
+        model=config.tier1.model,
+        temperature=config.tier1.temperature,
+        max_tokens=config.tier1.max_tokens,
+        context_length=config.tier1.context_length,
+    )
+    tier2 = OllamaAdapter(
+        name="light",
+        model=config.tier2.model,
+        temperature=config.tier2.temperature,
+        max_tokens=config.tier2.max_tokens,
+        context_length=config.tier2.context_length,
+    )
+
+    router = ModelRouter(escalation_criteria=config.escalation, config=config)
+    router.register_local(tier1)
+    router.register_local(tier2)
+
+    # Load tier 3 providers
+    provider_registry = ProviderRegistry(daily_cap=config.daily_frontier_cap)
+    load_providers_from_config(provider_registry, config.tier3_providers)
+    for entry in provider_registry.list_available():
+        router.register_frontier(entry.adapter)
+
+    logger.info(
+        "Router initialized from %s: tier1=%s, tier2=%s, %d frontier providers",
+        config_path, tier1.model, tier2.model, len(provider_registry.list_available()),
+    )
+    return router
+
+
 def make_model_call(mode: str) -> ModelCallable:
     """Parse a --model-call flag value and return the appropriate callable.
 
@@ -322,7 +409,19 @@ def make_model_call(mode: str) -> ModelCallable:
         logger.info("Using Ollama adapter: model=%s, host=%s", adapter.model, adapter.host)
         return adapter.call
 
+    if mode == "anthropic":
+        adapter = AnthropicAdapter()
+        logger.info("Using Anthropic adapter: model=%s", adapter.model)
+        return adapter.call
+
+    if mode.startswith("anthropic:"):
+        model_name = mode.split(":", 1)[1]
+        adapter = AnthropicAdapter(model=model_name)
+        logger.info("Using Anthropic adapter: model=%s", adapter.model)
+        return adapter.call
+
     raise ValueError(
         f"Unknown model-call mode: {mode!r}. "
-        "Supported: 'stub', 'tier1', 'tier2', 'ollama', 'ollama:<model_name>'"
+        "Supported: 'stub', 'tier1', 'tier2', 'ollama', 'ollama:<model_name>', "
+        "'anthropic', 'anthropic:<model_name>'"
     )

@@ -447,14 +447,35 @@ class TestCanonUpdater:
                 "new_entities": [],
             })
 
-    def test_validate_missing_citations(self):
-        with pytest.raises(ValueError, match="no citations"):
-            self.agent.validate({
+    def test_validate_missing_citations_reclassifies_as_belief(self):
+        """Claims without citations are auto-reclassified as beliefs, not rejected."""
+        output = {
+            "new_claims": [
+                {
+                    "claim_id": "cl1",
+                    "statement": "Fact",
+                    "claim_type": "event",
+                    "citations": [],
+                }
+            ],
+            "updated_characters": [],
+            "new_threads": [],
+            "resolved_threads": [],
+            "new_entities": [],
+        }
+        self.agent.validate(output)
+        assert output["new_claims"][0]["claim_type"] == "belief"
+        assert "_note" in output["new_claims"][0]
+
+    def test_validate_belief_and_legend_without_citations(self):
+        """Belief and legend claim types don't need citations."""
+        for ct in ("belief", "legend"):
+            output = {
                 "new_claims": [
                     {
-                        "claim_id": "cl1",
-                        "statement": "Fact",
-                        "claim_type": "event",
+                        "claim_id": f"cl-{ct}",
+                        "statement": "An old tale",
+                        "claim_type": ct,
                         "citations": [],
                     }
                 ],
@@ -462,27 +483,12 @@ class TestCanonUpdater:
                 "new_threads": [],
                 "resolved_threads": [],
                 "new_entities": [],
-            })
-
-    def test_validate_citation_missing_doc_id(self):
-        with pytest.raises(ValueError, match="missing doc_id or segment_id"):
-            self.agent.validate({
-                "new_claims": [
-                    {
-                        "claim_id": "cl1",
-                        "statement": "Fact",
-                        "claim_type": "event",
-                        "citations": [{"doc_id": "", "segment_id": "s1"}],
-                    }
-                ],
-                "updated_characters": [],
-                "new_threads": [],
-                "resolved_threads": [],
-                "new_entities": [],
-            })
+            }
+            self.agent.validate(output)
+            assert output["new_claims"][0]["claim_type"] == ct
 
     def test_validate_all_claim_types(self):
-        for ct in ("canon_fact", "world_rule", "character_trait", "event"):
+        for ct in ("canon_fact", "world_rule", "character_trait", "event", "belief", "legend"):
             self.agent.validate({
                 "new_claims": [
                     {
@@ -619,9 +625,17 @@ class TestNarrationFormatter:
                 "recap": "Previously...",
             })
 
-    def test_validate_empty_recap(self):
-        with pytest.raises(ValueError, match="recap must be non-empty"):
-            self.agent.validate({
-                "narration_script": "Some narration",
-                "recap": "",
-            })
+    def test_validate_empty_recap_gets_default(self):
+        output = {
+            "narration_script": "Some narration",
+            "recap": "",
+        }
+        self.agent.validate(output)
+        assert output["recap"] == "The story begins..."
+
+    def test_parse_freeform_text(self):
+        """Non-JSON freeform narration is accepted as narration_script."""
+        freeform = "[NARRATOR] The ship drifted silently.\n[VOICE: Kael] Check the readings."
+        result = self.agent.parse(freeform)
+        assert result["narration_script"] == freeform
+        assert result["recap"] == ""

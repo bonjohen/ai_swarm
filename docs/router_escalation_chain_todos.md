@@ -250,8 +250,9 @@ Wire the frontier pool with quality/cost-based provider selection. Tier 3 select
   - `OpenAIAdapter` — GPT-4o, GPT-4-turbo (also supports compatible endpoints)
   - `OllamaAdapter` (existing) — any additional local Ollama models on workstation GPU
 - [X] Register all providers in `ProviderRegistry` with cost/quality metadata from `router_config.yaml` — `load_providers_from_config()` wires config entries to adapters
-- [ ] Add `--router-config` flag to all CLI scripts (run_cert, run_dossier, run_lab, run_story)
-- [ ] Update `make_model_call()` to support `"router"` mode that initializes all tiers from config
+- [X] Add `--router-config` flag to all CLI scripts (run_cert, run_dossier, run_lab, run_story) — when provided, calls `make_router_from_config(path)` and passes `router=` to `execute_graph()` instead of `model_call=`
+- [X] Add `make_router_from_config(config_path)` to `core/adapters.py` — builds `ModelRouter` with tier 1/2 local adapters and tier 3 providers from YAML config
+- [X] Add `"anthropic"` and `"anthropic:<model>"` modes to `make_model_call()` in `core/adapters.py`
 
 ### R4.2 Quality/Cost-Based Provider Selection
 
@@ -301,6 +302,31 @@ Wire the frontier pool with quality/cost-based provider selection. Tier 3 select
 - [X] Test all Tier 3 providers fail → structured error
 - [X] Integration test: graph run with all tiers active (mock models at each tier)
 
+### R4.6 Story Engine Tiered Routing
+
+Per-agent model split for the story graph — creative agents on Anthropic Haiku, extraction agents on local Ollama, tier 0 agents deterministic (no LLM).
+
+- [X] Add `StoryTieredRouter(ModelRouter)` in `scripts/run_story.py`:
+  - Routes by `state["_current_agent_id"]` (injected by orchestrator)
+  - Creative agents (`premise_architect`, `plot_architect`, `scene_writer`, `narration_formatter`) → Anthropic Haiku (frontier)
+  - Extraction agents (`canon_updater`, `contradiction`, `audience_compliance`) → local Ollama llama3:8b (local)
+  - Tier 0 agents (`story_memory_loader`, `qa_validator`, `delta`, `publisher`) → deterministic, no LLM
+- [X] Add `--tiered` CLI flag to `scripts/run_story.py`
+- [X] Inject `state["_current_agent_id"] = agent.AGENT_ID` in `core/orchestrator.py:_execute_node()` before router block
+- [X] Add token tracking to `OllamaAdapter` and `AnthropicAdapter` (`total_input_tokens`, `total_output_tokens`, `call_count`)
+  - Ollama: reads `prompt_eval_count` / `eval_count` from response
+  - Anthropic: reads `usage.input_tokens` / `usage.output_tokens` from response
+- [X] Add per-adapter token usage summary printed after run
+- [X] Add `min_interval` rate limiter to `AnthropicAdapter` (configurable seconds between calls, default 0)
+- [X] Add `repair_json()` state-machine in `agents/base_agent.py`:
+  - Single-pass fix for unescaped quotes (dialogue in prose), literal newlines/tabs/carriage-returns inside JSON strings
+  - Heuristic: `"` inside a string is structural (closes the string) only if next non-whitespace char is `:` `,` `}` `]`
+  - Truncation repair: detects and closes missing brackets/braces at EOF (for output that hits `max_tokens`)
+  - Wired into `BaseAgent.run()` as first recovery step before LLM-based JSON recovery
+- [X] Update `BaseAgent._try_json_recovery()` to use same model (via `model_call`) instead of separate 1.5b adapter
+- [X] Update `scene_writer_agent.py`: `parse()` computes `episode_text` from scenes when missing (avoids requiring duplicate output that doubles token cost)
+- [X] End-to-end verified: full 11-node story graph completes with tiered routing (4 Haiku calls, 3 Ollama calls, 0 retries)
+
 ---
 
 ## Phase R5: Observability and Tuning
@@ -309,43 +335,45 @@ Logging, metrics, and threshold tuning for the tiered router.
 
 ### R5.1 Routing Telemetry
 
-- [ ] Log every routing decision to `routing_decisions` table — table and DAO exist (R0.5) but orchestrator/router don't call them yet:
-  - Request tier, chosen tier, provider name, escalation reason, confidence, complexity, latency, tokens, cost
-- [ ] Add `_log_routing_decision()` helper to `TieredDispatcher`
-- [ ] Extend `MetricsCollector` in `core/logging.py` with router metrics:
+- [X] Log every routing decision to `routing_decisions` table — orchestrator `_execute_node()` now calls `insert_routing_decision()` after each routed node execution:
+  - Request tier, chosen tier, provider name, escalation reason, latency, created_at
+  - DB persistence is best-effort (caught exceptions don't break execution)
+- [X] Add `_log_routing_decision()` helper to `TieredDispatcher` — logs tier, provider, latency, quality to MetricsCollector after every dispatch
+- [X] Extend `MetricsCollector` in `core/logging.py` with router metrics via `record_routing_decision()`:
   - `tier_distribution`: count of requests per tier
-  - `escalation_rate`: fraction of requests escalated from each tier
-  - `frontier_usage_rate`: fraction of requests reaching Tier 3
-  - `provider_distribution`: count of Tier 3 requests per provider
+  - `escalation_rate`: fraction of routing decisions that were escalated
+  - `frontier_usage_rate`: fraction of requests reaching frontier (existing)
+  - `provider_distribution`: count of requests per provider
   - `cost_by_provider`: total cost broken down by provider
   - `avg_latency_by_tier`: average latency per tier
   - `avg_quality_by_tier`: average quality score per tier
 
 ### R5.2 Dashboard Integration
 
-- [ ] Add router metrics panel to `scripts/dashboard.py`:
-  - Tier distribution chart
-  - Escalation rate over time
-  - Cost breakdown by tier and by provider
-  - Quality score distribution by tier
-  - Top escalation reasons
-  - Provider availability history
+- [X] Add `/routing` endpoint to `scripts/dashboard.py`:
+  - In-memory metrics: tier distribution, escalation rate/counts, provider distribution, cost by provider, avg latency/quality by tier
+  - DB metrics: tier distribution and cost by provider from `routing_decisions` table
+  - Optional `?run_id=` query param to filter by run
+  - Per-run decision detail list
 
 ### R5.3 Threshold Tuning
 
-- [ ] Add `scripts/tune_router.py` — analyze routing_decisions and suggest threshold adjustments:
-  - Identify over-escalation (high confidence requests sent to higher tiers)
-  - Identify under-escalation (low quality results from lower tiers)
-  - Identify cost optimization opportunities (expensive provider used when cheap one would suffice)
-  - Output recommended threshold and weight changes
-- [ ] Support `RouterConfig` hot-reload (re-read YAML without restart)
+- [X] Add `scripts/tune_router.py` — analyze routing_decisions and suggest threshold adjustments:
+  - `analyze_over_escalation()`: high-confidence requests sent to higher tiers
+  - `analyze_under_escalation()`: low-quality results from lower tiers
+  - `analyze_cost_optimization()`: per-provider total cost, avg cost/call, avg latency
+  - `suggest_thresholds()`: recommended confidence and quality thresholds based on averages
+  - Supports `--json` output and `--run-id` filter
+- [X] Support `RouterConfig` hot-reload (re-read YAML without restart):
+  - `ModelRouter.reload_config(path)`: updates `escalation_criteria` and `config` from YAML, preserves adapters
+  - `TieredDispatcher.reload_config(path)`: updates confidence/quality thresholds, per-tier timeouts, concurrency semaphores, and propagates to attached `ModelRouter`
 
 ### R5.4 Phase R5 Tests
 
-- [ ] Test routing decision logging to DB with provider field
-- [ ] Test MetricsCollector router metrics including provider breakdown
-- [ ] Test threshold tuning script with synthetic data
-- [ ] Test config hot-reload changes thresholds
+- [X] Test routing decision logging to DB with provider field — `TestRoutingDecisionDB` (4 tests)
+- [X] Test MetricsCollector router metrics including provider breakdown — `TestMetricsCollectorRouter` (7 tests)
+- [X] Test threshold tuning script with synthetic data — `TestTuneRouter` (6 tests)
+- [X] Test config hot-reload changes thresholds — `TestModelRouterReload` (2 tests), `TestDispatcherReload` (2 tests), `TestMakeRouterFromConfig` (1 test)
 
 ---
 
@@ -355,52 +383,53 @@ Reliability, safety rails, and production hardening.
 
 ### R6.1 Safety Rails
 
-- [ ] Add safety classification to micro router output: `safety_flag: bool`, `safety_reason: str`
-- [ ] If safety_flag is true: bypass reasoning tiers, return canned response or flag for review
-- [ ] Add input sanitization: strip injection attempts, enforce max input length
+- [X] Add safety classification to micro router output: `safety_flag: bool`, `safety_reason: str` — added to `MicroRouterOutput` schema, parse, and system prompt
+- [X] If safety_flag is true: bypass reasoning tiers, return `DispatchResult(action="rejected", safety_flagged=True)` immediately from `_tier1_classify()`
+- [X] Add input sanitization in `TieredDispatcher`:
+  - `sanitize_input()`: enforces `max_input_length` (default 10k chars)
+  - `detect_injection()`: static method checks 5 regex patterns (ignore instructions, disregard prior, you are now, system: prefix, system tags)
+  - Rejection at dispatch entry point before any LLM call
 
 ### R6.2 Timeout Enforcement
 
-- [ ] Per-tier timeout caps in RouterConfig — adapters have timeout fields but no per-tier enforcement in a dispatcher:
-  - Tier 1: 5s
-  - Tier 2: 30s
-  - Tier 3: 120s (may vary by provider)
-- [ ] Per-provider timeout overrides in provider config — timeout fields exist on adapter dataclasses but not enforced at dispatch level
-- [ ] Enforce in `TieredDispatcher` with `asyncio.wait_for()` or thread-level timeout
-- [ ] On timeout: escalate to next tier or next provider (treat as failure)
+- [X] Per-tier timeout defaults: Tier 1 = 5s, Tier 2 = 30s (`DEFAULT_TIER1_TIMEOUT`, `DEFAULT_TIER2_TIMEOUT`)
+- [X] `TierConfig` extended with `timeout: float = 30.0` field
+- [X] Enforce via `_call_with_timeout()` using `concurrent.futures.ThreadPoolExecutor` with `future.result(timeout=...)`
+  - Tier 1: wraps `agent.run()` call in `_tier1_classify()`
+  - Tier 2: wraps `self.tier2_model_call()` in `_tier2_reason()`
+- [X] On timeout: catches `TimeoutError`/`concurrent.futures.TimeoutError`, logs warning, escalates to next tier
 
 ### R6.3 Concurrency Control
 
-- [ ] Add concurrency limits per tier in RouterConfig:
-  - Tier 1 (micro deepseek): high concurrency (8+ workers)
-  - Tier 2 (light deepseek): moderate (2–4 workers)
-  - Tier 3 (frontier pool): per-provider limits (e.g., DGX Spark 2, API providers by rate limit)
-- [ ] Implement semaphore-based concurrency in `TieredDispatcher`
-- [ ] Queue requests when concurrency limit reached
+- [X] Semaphore-based concurrency limits per tier in `TieredDispatcher`:
+  - Tier 1: `threading.Semaphore(8)` — high concurrency for micro classification
+  - Tier 2: `threading.Semaphore(4)` — moderate for light reasoning
+- [X] `_acquire_semaphore(tier, timeout)` / `_release_semaphore(tier)` helpers
+- [X] Dispatch acquires semaphore before tier call, releases in `finally` block
+- [X] If semaphore not acquired within timeout, tier is skipped (escalates to next)
 
 ### R6.4 GPU and Hardware Health Monitoring
 
-- [ ] Add `core/gpu_monitor.py`:
-  - Query Ollama `/api/tags` for loaded models (local workstation)
-  - Track VRAM usage via `nvidia-smi` parsing (local GPU)
-  - Ping DGX Spark health endpoint for remote hardware availability
-  - Alert if local VRAM > 90% or KV cache pressure detected
-  - Alert if DGX Spark unreachable
-- [ ] Integrate health check into `TieredDispatcher`:
-  - If local GPU unhealthy: route Tier 1/2 to degraded mode or queue
-  - If DGX Spark unhealthy: remove from Tier 3 provider pool, prefer cloud providers
-- [ ] Add provider availability tracking: mark providers as `available: false` on repeated failures, retry periodically
+- [X] Added `core/gpu_monitor.py`:
+  - `check_nvidia_smi()`: parses `nvidia-smi --query-gpu` CSV output → `GPUStatus` dataclass (name, VRAM total/used/free, utilization, temperature, `healthy` property at <90% VRAM)
+  - `check_ollama(host)`: GET `/api/tags` → `OllamaHealth` (reachable, loaded_models, error)
+  - `check_health()`: aggregate → `HealthReport` with `local_gpu_healthy`, `local_ollama_reachable`, `dgx_spark_reachable` properties
+- [X] Integrated into `TieredDispatcher.run_health_check()`:
+  - If DGX Spark unreachable: marks dgx providers unavailable in `ProviderRegistry`
+  - If DGX Spark recovers: marks dgx providers available again
+  - Non-dgx providers unaffected
+  - GPU VRAM pressure logged as warning
 
 ### R6.5 Phase R6 Tests
 
-- [ ] Test safety flag detection and bypass
-- [ ] Test per-tier timeout enforcement
-- [ ] Test per-provider timeout overrides
-- [ ] Test concurrency semaphore limits
-- [ ] Test GPU health check parsing (local)
-- [ ] Test DGX Spark health check (mock HTTP)
-- [ ] Test provider availability tracking (mark down, mark up)
-- [ ] Test degradation on GPU pressure
+- [X] Test safety flag detection and bypass — `TestSafetyFlagBypass` (2 tests)
+- [X] Test input sanitization — `TestInputSanitization` (7 tests), `TestStaticDetectInjection` (3 tests)
+- [X] Test per-tier timeout enforcement — `TestTimeoutEnforcement` (3 tests)
+- [X] Test concurrency semaphore limits — `TestConcurrencyControl` (3 tests)
+- [X] Test GPU health check parsing (local) — `TestNvidiaSmi` (3 tests), `TestGPUStatus` (3 tests)
+- [X] Test DGX Spark / Ollama health check (mock HTTP) — `TestOllamaHealth` (3 tests)
+- [X] Test provider availability tracking (mark down, mark up) — `TestProviderAvailabilityTracking` (3 tests)
+- [X] Test health report properties — `TestHealthReport` (2 tests)
 
 ---
 
